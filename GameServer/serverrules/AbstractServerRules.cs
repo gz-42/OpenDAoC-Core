@@ -1052,12 +1052,13 @@ namespace DOL.GS.ServerRules
                 // This is used so that we can fallback to another owner if auto pick up fails or isn't handled, if we wants to.
                 SortedSet<ItemOwnerTotalDamagePair> itemOwners = new(_gameStaticItemOwnerDamageComparer);
 
-                // We prioritize 
                 if (mostDamagingBattlegroup != null)
                     itemOwners.Add(mostDamagingBattlegroup);
-                else if (mostDamagingGroup != null)
+
+                if (mostDamagingGroup != null)
                     itemOwners.Add(mostDamagingGroup);
-                else if (mostDamagingPlayer != null)
+
+                if (mostDamagingPlayer != null)
                     itemOwners.Add(mostDamagingPlayer);
 
                 DropLoot(killedNpc, killer, itemOwners);
@@ -1157,7 +1158,7 @@ namespace DOL.GS.ServerRules
                         entityDamage[entity] = new(1, totalDamage, player);
                     }
 
-                    if (totalDamage > mostDamagingEntity.Damage)
+                    if (mostDamagingEntity.Damage == 0 || totalDamage > mostDamagingEntity.Damage)
                     {
                         if (entity != mostDamagingEntity.Owner)
                             mostDamagingEntity.Owner = entity;
@@ -1180,16 +1181,7 @@ namespace DOL.GS.ServerRules
             BattleGroup battlegroup = playerToAward.TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY);
             long baseXpReward;
 
-            if (battlegroup != null)
-            {
-                battlegroupCountAndDamage.TryGetValue(battlegroup, out entityCountTotalDamagePair);
-
-                if (entityCountTotalDamagePair == null)
-                    return;
-
-                baseXpReward = CalculateNpcExperienceModifiedByGroupOrBattlegroup(entityCountTotalDamagePair);
-            }
-            else if (playerToAward.Group != null)
+            if (playerToAward.Group != null)
             {
                 groupCountAndDamage.TryGetValue(playerToAward.Group, out entityCountTotalDamagePair);
 
@@ -1510,6 +1502,7 @@ namespace DOL.GS.ServerRules
                 };
 
                 NotifyNearbyPlayers(killedNpc, money, playersInRadius);
+                money.AddToWorld();
 
                 // Attempt auto pick up.
                 foreach (ItemOwnerTotalDamagePair itemOwner in itemOwners)
@@ -1519,8 +1512,6 @@ namespace DOL.GS.ServerRules
                     if (itemOwner.Owner.TryAutoPickUpMoney(money))
                         return;
                 }
-
-                money.AddToWorld();
             }
 
             static void CreateItem(GameNPC killedNpc, DbItemTemplate itemTemplate, SortedSet<ItemOwnerTotalDamagePair> itemOwners, List<GamePlayer> nearbyPlayers)
@@ -1557,6 +1548,7 @@ namespace DOL.GS.ServerRules
                 };
 
                 NotifyNearbyPlayers(killedNpc, item, nearbyPlayers);
+                item.AddToWorld();
 
                 // Attempt auto pick up.
                 foreach (ItemOwnerTotalDamagePair itemOwner in itemOwners)
@@ -1566,9 +1558,6 @@ namespace DOL.GS.ServerRules
                     if (itemOwner.Owner.TryAutoPickUpItem(item))
                         return;
                 }
-
-                // Don't bother spawning the item if it was picked up.
-                item.AddToWorld();
             }
 
             static void NotifyNearbyPlayers(GameNPC killedNpc, GameStaticItemTimed item, List<GamePlayer> nearbyPlayers)
@@ -1656,7 +1645,7 @@ namespace DOL.GS.ServerRules
                         entityDamage[entity] = new(1, totalDamage, player);
                     }
 
-                    if (totalDamage > mostDamagingEntity.Damage)
+                    if (mostDamagingEntity.Damage == 0 || totalDamage > mostDamagingEntity.Damage)
                     {
                         if (entity != mostDamagingEntity.Owner)
                             mostDamagingEntity.Owner = entity;
