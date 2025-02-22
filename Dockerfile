@@ -10,21 +10,21 @@ WORKDIR /build
 COPY . .
 
 # Install required tools and clone the database repository
-RUN apt-get update && \
-    apt-get install -y unzip git sed && \
-    git config --global http.sslVerify false && \
-    git clone https://github.com/OpenDAoC/OpenDAoC-Database.git /tmp/opendaoc-db && \
-    rm -rf /var/lib/apt/lists/*
+#RUN apt-get update && \
+#    apt-get install -y unzip git sed && \
+#    git config --global http.sslVerify false && \
+#    git clone https://github.com/OpenDAoC/OpenDAoC-Database.git /tmp/opendaoc-db && \
+#    rm -rf /var/lib/apt/lists/*
 
 # Combine the SQL files
-WORKDIR /tmp/opendaoc-db/opendaoc-db-core
-RUN cat *.sql > combined.sql
+#WORKDIR /tmp/opendaoc-db/opendaoc-db-core
+#RUN cat *.sql > combined.sql
 
 # Set the working directory back to the build container
 WORKDIR /build
 
 # Copy serverconfig.example.xml to serverconfig.xml
-RUN cp /build/CoreServer/config/serverconfig.example.xml /build/CoreServer/config/serverconfig.xml
+#RUN cp /build/CoreServer/config/serverconfig.example.xml /build/CoreServer/config/serverconfig.xml
 
 # Build the application in Release mode
 RUN dotnet build DOLLinux.sln -c Release
@@ -44,7 +44,7 @@ WORKDIR /app
 COPY --from=build /build/Release /app
 
 # Copy the combined.sql file from the build stage
-COPY --from=build /tmp/opendaoc-db/opendaoc-db-core/combined.sql /tmp/opendaoc-db/combined.sql
+#COPY --from=build /tmp/opendaoc-db/opendaoc-db-core/combined.sql /tmp/opendaoc-db/combined.sql
 
 # Copy the entrypoint script
 COPY --from=build /build/entrypoint.sh /app
