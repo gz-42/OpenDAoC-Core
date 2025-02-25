@@ -106,7 +106,7 @@ jobs:
           echo "## 🐳 Docker" > release_notes.txt
           echo "This release do not contain the database and is also available as Docker image on [ghcr](https://ghcr.io/${{ steps.repo_name.outputs.lowercase }}) using one of the following commands:" >> release_notes.txt
           echo "" >> release_notes.txt
-          echo "- \`docker pull ghcr.io/${{ steps.repo_name.outputs.lowercase }}/${{ steps.set_version.outputs.version }}\`" >> release_notes.txt
+          echo "- \`docker pull ghcr.io/${{ steps.repo_name.outputs.lowercase }}:${{ steps.set_version.outputs.version }}\`" >> release_notes.txt
           echo "- \`docker pull ghcr.io/${{ steps.repo_name.outputs.lowercase }}:latest\`" >> release_notes.txt
 #          echo "" >> release_notes.txt
 #          echo "## 🛠 Changes" >> release_notes.txt
