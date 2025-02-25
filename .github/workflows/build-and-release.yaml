@@ -119,37 +119,26 @@ jobs:
           name: 'Release ${{ steps.set_version.outputs.version }}'
           tag_name: '${{ steps.set_version.outputs.version }}'
           
-  update-push:
-    needs: build-and-push
-    name: Clone update and Push
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup SSH
-      uses: MrSquaare/ssh-setup-action@v3
-      with:
-          host: github.com
-          private-key: ${{ secrets.PRIVATE_KEY_GITHUB }}
+      - name: Clone update and Push
+        uses: actions/checkout@v4
+      - name: Setup SSH
+        uses: MrSquaare/ssh-setup-action@v3
+        with:
+            host: github.com
+            private-key: ${{ secrets.PRIVATE_KEY_GITHUB }}
           
-    - name: Update Manifest
-      run: |
-        pwd
-        ls
-        rm -Rf *
-        git clone git@github.com:gz-42/devops-opendaoc.git
-        ls
-        cd devops-opendaoc/manifests/gameserver/
-        cat gameserver-deployment.yaml
-        sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ steps.set_version.outputs.version }}+g" gameserver-deployment.yaml
-        cat gameserver-deployment.yaml
+      - name: Update Manifest
+        run: |
+          rm -Rf *
+          git clone git@github.com:gz-42/devops-opendaoc.git
+          cd devops-opendaoc/manifests/gameserver/
+          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ steps.set_version.outputs.version }}+g" gameserver-deployment.yaml
     
-    - name: Commit and push changes
-      run: |
-        pwd
-        ls
-        cd devops-opendaoc
-        git config --global user.name "Keo"
-        git config --global user.email "keo@gz-42.com"
-        git add -A
-        git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
-        git push origin master
+      - name: Commit and push changes
+        run: |
+          cd devops-opendaoc
+          git config --global user.name "Keo"
+          git config --global user.email "keo@gz-42.com"
+          git add -A
+          git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
+          git push origin master
