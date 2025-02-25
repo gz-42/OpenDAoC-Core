@@ -45,9 +45,12 @@ jobs:
     - name: New commits found
       if: steps.sync.outputs.has_new_commits == 'true'
       run: echo "New commits were found to sync."
-      call-workflow:
-        uses: ./.github/workflows/build-and-release.yaml
-    
+   
+    # Call build and release workflow if we have new commits
+    - name: Call build and release workflow
+      if: steps.sync.outputs.has_new_commits == 'true'
+      uses: ./.github/workflows/build-and-release.yaml
+      
     - name: No new commits
       if: steps.sync.outputs.has_new_commits == 'false'
       run: echo "There were no new commits."
