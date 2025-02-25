@@ -125,8 +125,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        repository: gz-42/devops-opendaoc
     - name: Setup SSH
       uses: MrSquaare/ssh-setup-action@v3
       with:
@@ -136,6 +134,9 @@ jobs:
     - name: Update Manifest
       run: |
         pwd
+        ls
+        rm -Rf *
+        git clone git@github.com:gz-42/devops-opendaoc.git
         ls
         cd devops-opendaoc/manifests/gameserver/
         cat gameserver-deployment.yaml
