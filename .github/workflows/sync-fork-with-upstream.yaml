@@ -22,7 +22,7 @@ jobs:
     # REQUIRED step
     # Step 1: run a standard checkout action, provided by github
     - name: Checkout target repo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         # optional: set the branch to checkout,
         # sync action checks out your 'target_sync_branch' anyway
@@ -49,7 +49,7 @@ jobs:
     # Call build and release workflow if we have new commits
     - name: Call build and release workflow
       if: steps.sync.outputs.has_new_commits == 'true'
-      uses: ./.github/workflows/build-and-release.yaml
+      uses: gz-42/OpenDAoC-Core/.github/workflows/build-and-release.yaml@master
       
     - name: No new commits
       if: steps.sync.outputs.has_new_commits == 'false'
