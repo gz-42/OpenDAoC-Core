@@ -1,9 +1,9 @@
 name: 'Build and push Docker image, then create release'
 on:
-  push:
-    branches:
-      - master
   workflow_call:
+    secrets:
+      PRIVATE_KEY_GITHUB:
+        required: true
 
 jobs:
   build-and-push:
