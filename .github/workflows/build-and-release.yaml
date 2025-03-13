@@ -127,28 +127,12 @@ jobs:
             host: github.com
             private-key: ${{ secrets.PRIVATE_KEY_GITHUB }}
           
-      - name: Update Manifest
-        run: |
-          rm -Rf *
-          git clone git@github.com:gz-42/devops-opendaoc.git
-          cd devops-opendaoc/manifests/gameserver/
-          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ steps.set_version.outputs.version }}+g" gameserver-deployment.yaml
-    
-      - name: Commit and push changes
-        run: |
-          cd devops-opendaoc
-          git config --global user.name "Keo"
-          git config --global user.email "keo@gz-42.com"
-          git add -A
-          git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
-          git push origin master
-
       - name: Update Charts
         run: |
           rm -Rf *
           git clone git@github.com:gz-42/devops-opendaoc.git
           cd devops-opendaoc/charts/aws-eks/opendaoc-core/
-          sed -i "s+tag:.*+tag: ${{ steps.set_version.outputs.version }}+g" values.yaml
+          sed -i "s+tag:.*+tag: ${{ steps.set_version.outputs.version }}+g" values.yaml    
           
       - name: Commit and push changes
         run: |
@@ -158,3 +142,19 @@ jobs:
           git add -A
           git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
           git push origin master
+
+#      - name: Update Manifest
+#        run: |
+#          rm -Rf *
+#          git clone git@github.com:gz-42/devops-opendaoc.git
+#          cd devops-opendaoc/manifests/gameserver/
+#          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ steps.set_version.outputs.version }}+g" gameserver-deployment.yaml
+#          
+#      - name: Commit and push changes
+#        run: |
+#          cd devops-opendaoc
+#          git config --global user.name "Keo"
+#          git config --global user.email "keo@gz-42.com"
+#          git add -A
+#          git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
+#          git push origin master
