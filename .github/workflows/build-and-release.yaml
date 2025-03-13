@@ -135,6 +135,12 @@ jobs:
           sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ steps.set_version.outputs.version }}+g" gameserver-deployment.yaml
           cd ../../charts/aws-eks/opendaoc-core/
           sed -i "s+tag:.*+tag: ${{ steps.set_version.outputs.version }}+g" values.yaml
+
+      - name: Update Charts
+        run: |
+          cd devops-opendaoc/charts/aws-eks/opendaoc-core/
+          sed -i "s+tag:.*+tag: ${{ steps.set_version.outputs.version }}+g" values.yaml
+
     
       - name: Commit and push changes
         run: |
