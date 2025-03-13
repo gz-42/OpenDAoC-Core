@@ -54,9 +54,9 @@ jobs:
       run: echo ${{ steps.sync.outputs.has_new_commits }}
 
     #If there is no new commit then exit fail the action
-    - name: If no new commits, fail the action
-      if: steps.sync.outputs.has_new_commits == 'false'
-      run: exit 1
+#    - name: If no new commits, fail the action
+#      if: steps.sync.outputs.has_new_commits == 'false'
+#      run: exit 1
 
   build-and-release:
     needs: sync_latest_from_upstream
