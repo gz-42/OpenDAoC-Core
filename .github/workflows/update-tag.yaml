@@ -1,0 +1,48 @@
+name: 'Update Manifest and Helm Chart Tags'
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version tag to update in manifests'
+        required: true
+        type: string
+      repository:
+        description: 'Repository name in lowercase'
+        required: true
+        type: string
+    secrets:
+      PRIVATE_KEY_GITHUB:
+        required: true
+
+jobs:
+  update-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        uses: MrSquaare/ssh-setup-action@v3
+        with:
+          host: github.com
+          private-key: ${{ secrets.PRIVATE_KEY_GITHUB }}
+          
+      - name: Clone, Update and Push Manifest
+        run: |
+          # Create a temporary directory and clone the repo there
+          TEMP_DIR=$(mktemp -d)
+          git clone git@github.com:gz-42/devops-opendaoc.git ${TEMP_DIR}
+          cd ${TEMP_DIR}
+          
+          # Update manifest files
+          cd manifests/gameserver/
+          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ inputs.version }}+g" db-statefulset.yaml
+          cd ../../charts/aws-eks/opendaoc-core/
+          sed -i "s+tag.*+tag: ${{ inputs.version }}+g" values.yaml
+          
+          # Configure git
+          git config --global user.name "Keo"
+          git config --global user.email "keo@gz-42.com"
+          
+          # Commit and push
+          git add -A
+          git commit -m "tag image update with ${{ inputs.version }}" || echo "No changes to commit"
+          git push origin master
