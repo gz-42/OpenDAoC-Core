@@ -17,6 +17,8 @@ jobs:
   sync_latest_from_upstream:
     runs-on: ubuntu-latest
     name: Sync latest commits from upstream repo
+    outputs:
+      has_new_commits: ${{ steps.sync.outputs.has_new_commits }}
 
     steps:
     # REQUIRED step
@@ -48,18 +50,14 @@ jobs:
       
     - name: No new commits
       if: steps.sync.outputs.has_new_commits == 'false'
-      run: echo "There were no new commits."
-      
+      run: echo "There were no new commits. Skipping build and release."
+
     - name: Show value of 'has_new_commits'
       run: echo ${{ steps.sync.outputs.has_new_commits }}
 
-    #If there is no new commit then exit fail the action
-    - name: If no new commits, fail the action
-      if: steps.sync.outputs.has_new_commits == 'false'
-      run: exit 1
-
   build-and-release:
     needs: sync_latest_from_upstream
+    if: needs.sync_latest_from_upstream.outputs.has_new_commits == 'true'
     name: build-and-release
     uses: gz-42/OpenDAoC-Core/.github/workflows/build-and-release.yaml@master
     secrets:
