@@ -9,6 +9,9 @@ jobs:
   build-and-push:
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set_version.outputs.version }}
+      repository: ${{ steps.repo_name.outputs.lowercase }}
     steps:
       - name: 🛎️ Checkout repository
         uses: actions/checkout@v4
@@ -63,26 +66,10 @@ jobs:
           push: false
           load: true
 
-#      - name: 🏷️ Tag image for Docker Hub
-#        run: |
-#          docker tag "${{ secrets.DOCKERHUB_USERNAME }}/${{ steps.repo_name.outputs.lowercase }}:temp" "${{ secrets.DOCKERHUB_USERNAME }}/opendaoc:${{ steps.set_version.outputs.version }}"
-#          docker tag "${{ secrets.DOCKERHUB_USERNAME }}/${{ steps.repo_name.outputs.lowercase }}:temp" "${{ secrets.DOCKERHUB_USERNAME }}/opendaoc:latest"
-
       - name: 🏷️ Tag image for GitHub Container Registry
         run: |
           docker tag "${{ github.actor }}/${{ steps.repo_name.outputs.lowercase }}:temp" "ghcr.io/${{ steps.repo_name.outputs.lowercase }}:${{ steps.set_version.outputs.version }}"
           docker tag "${{ github.actor }}/${{ steps.repo_name.outputs.lowercase }}:temp" "ghcr.io/${{ steps.repo_name.outputs.lowercase }}:latest"
-
-#      - name: 🔑 Log in to Docker Hub
-#        uses: docker/login-action@v3
-#        with:
-#          username: '${{ secrets.DOCKERHUB_USERNAME }}'
-#          password: '${{ secrets.DOCKERHUB_TOKEN }}'
-
-#      - name: 📤 Push to Docker Hub
-#        run: |
-#          docker push "${{ secrets.DOCKERHUB_USERNAME }}/opendaoc:${{ steps.set_version.outputs.version }}"
-#          docker push "${{ secrets.DOCKERHUB_USERNAME }}/opendaoc:latest"
 
       - name: 🔑 Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -108,9 +95,6 @@ jobs:
           echo "" >> release_notes.txt
           echo "- \`docker pull ghcr.io/${{ steps.repo_name.outputs.lowercase }}:${{ steps.set_version.outputs.version }}\`" >> release_notes.txt
           echo "- \`docker pull ghcr.io/${{ steps.repo_name.outputs.lowercase }}:latest\`" >> release_notes.txt
-#          echo "" >> release_notes.txt
-#          echo "## 🛠 Changes" >> release_notes.txt
-#          echo "$CHANGES" >> release_notes.txt
         working-directory: ${{ github.workspace }}
 
       - name: 🚀 Publish Release
@@ -119,42 +103,11 @@ jobs:
           name: 'Release ${{ steps.set_version.outputs.version }}'
           tag_name: '${{ steps.set_version.outputs.version }}'
           
-      - name: Clone update and Push
-        uses: actions/checkout@v4
-      - name: Setup SSH
-        uses: MrSquaare/ssh-setup-action@v3
-        with:
-            host: github.com
-            private-key: ${{ secrets.PRIVATE_KEY_GITHUB }}
-          
-      - name: Update Charts
-        run: |
-          rm -Rf *
-          git clone git@github.com:gz-42/devops-opendaoc.git
-          cd devops-opendaoc/charts/aws-eks/opendaoc-core/
-          sed -i "s+tag:.*+tag: ${{ steps.set_version.outputs.version }}+g" values.yaml    
-          
-      - name: Commit and push changes
-        run: |
-          cd devops-opendaoc
-          git config --global user.name "Keo"
-          git config --global user.email "keo@gz-42.com"
-          git add -A
-          git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
-          git push origin master
-
-#      - name: Update Manifest
-#        run: |
-#          rm -Rf *
-#          git clone git@github.com:gz-42/devops-opendaoc.git
-#          cd devops-opendaoc/manifests/gameserver/
-#          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ steps.set_version.outputs.version }}+g" gameserver-deployment.yaml
-#          
-#      - name: Commit and push changes
-#        run: |
-#          cd devops-opendaoc
-#          git config --global user.name "Keo"
-#          git config --global user.email "keo@gz-42.com"
-#          git add -A
-#          git commit -m "tag image update with ${{ steps.set_version.outputs.version }}"
-#          git push origin master
+  update-manifests:
+    needs: build-and-push
+    uses: ./.github/workflows/update-tag.yaml
+    with:
+      version: ${{ needs.build-and-push.outputs.version }}
+      repository: ${{ needs.build-and-push.outputs.repository }}
+    secrets:
+      PRIVATE_KEY_GITHUB: ${{ secrets.PRIVATE_KEY_GITHUB }}
