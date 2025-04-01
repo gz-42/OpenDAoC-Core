@@ -34,7 +34,7 @@ jobs:
           
           # Update manifest files
           cd manifests/gameserver/
-          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ inputs.version }}+g" db-statefulset.yaml
+          sed -i "s+ghcr.io/gz-42/opendaoc-core.*+ghcr.io/gz-42/opendaoc-core:${{ inputs.version }}+g" gameserver-deployment.yaml
           cd ../../charts/aws-eks/opendaoc-core/
           sed -i "s+tag.*+tag: ${{ inputs.version }}+g" values.yaml
           
