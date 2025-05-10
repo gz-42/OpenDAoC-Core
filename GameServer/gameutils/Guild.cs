@@ -106,6 +106,8 @@ namespace DOL.GS
 		/// </summary>
 		protected int m_id;
 
+		private GuildBuffTimer _guidBuffTimer;
+
 		/// <summary>
 		/// Stores claimed keeps (unique)
 		/// </summary>
@@ -334,7 +336,7 @@ namespace DOL.GS
 
 		static Guild()
 		{
-			if (GameServer.Instance.Configuration.ServerType == EGameServerType.GST_PvP)
+			if (GameServer.Instance.Configuration.ServerType is EGameServerType.GST_PvP)
 				DummyGuild = GuildMgr.CreateGuild(0, "DummyGuildToMakePetsUntargetable") ?? GuildMgr.GetGuildByName("DummyGuildToMakePetsUntargetable");
 		}
 
@@ -344,8 +346,9 @@ namespace DOL.GS
 		/// </summary>
 		public Guild(DbGuild dbGuild)
 		{
-			this.m_DBguild = dbGuild;
+			m_DBguild = dbGuild;
 			bannerStatus = "None";
+			TryStartGuildBuffTimer();
 		}
 
 		public int Emblem
@@ -378,11 +381,6 @@ namespace DOL.GS
 		{
 			get
 			{
-				if (m_DBguild.GuildBannerLostTime == null)
-				{
-					return new DateTime(2010, 1, 1);
-				}
-
 				return m_DBguild.GuildBannerLostTime;
 			}
 			set
@@ -971,19 +969,12 @@ namespace DOL.GS
 		/// </summary>
 		public DateTime BonusStartTime
 		{
-			get 
+			get => m_DBguild.BonusStartTime;
+			set
 			{
-				if (m_DBguild.BonusStartTime == null)
-				{
-					return new DateTime(2010, 1, 1);
-				}
-
-				return this.m_DBguild.BonusStartTime; 
-			}
-			set 
-			{
-				this.m_DBguild.BonusStartTime = value;
-				this.SaveIntoDatabase();
+				m_DBguild.BonusStartTime = value;
+				TryStartGuildBuffTimer();
+				SaveIntoDatabase();
 			}
 		}
 
@@ -1065,11 +1056,55 @@ namespace DOL.GS
 			return bannerStatus;
 		}
 
+		public void TryStartGuildBuffTimer()
+		{
+			if (IsStartingGuild || ShouldGuildBuffExpire())
+				return;
+
+			_guidBuffTimer ??= new(this);
+
+			if (!_guidBuffTimer.IsAlive)
+				_guidBuffTimer.Start(60000);
+		}
+
+		public bool ShouldGuildBuffExpire()
+		{
+			return DateTime.Now.Subtract(BonusStartTime).Days > 0;
+		}
+
 		public enum ChangeBankResult
 		{
 			INVALID,
 			FULL,
 			SUCCESS
+		}
+
+		public class GuildBuffTimer : ECSGameTimerWrapperBase
+		{
+			private const string MESSAGE = "[Guild Buff] Your guild buff has now worn off!";
+			private Guild _guild;
+
+			public GuildBuffTimer(Guild guild) : base(null)
+			{
+				_guild = guild;
+			}
+
+			protected override int OnTick(ECSGameTimer timer)
+			{
+				if (_guild.BonusType is eBonusType.None)
+					return 0;
+
+				if (!_guild.ShouldGuildBuffExpire())
+					return Interval;
+
+				_guild.BonusType = eBonusType.None;
+				_guild.SaveIntoDatabase();
+
+				foreach (GamePlayer player in _guild.GetListOfOnlineMembers())
+					player.Out.SendMessage(MESSAGE, eChatType.CT_Guild, eChatLoc.CL_ChatWindow);
+
+				return 0;
+			}
 		}
 	}
 }

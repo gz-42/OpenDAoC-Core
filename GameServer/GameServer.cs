@@ -17,6 +17,7 @@ using DOL.GS.Behaviour;
 using DOL.GS.DatabaseUpdate;
 using DOL.GS.Housing;
 using DOL.GS.Keeps;
+using DOL.GS.Metrics;
 using DOL.GS.PacketHandler;
 using DOL.GS.PlayerTitles;
 using DOL.GS.Quests;
@@ -577,24 +578,9 @@ namespace DOL.GS
             try
             {
                 if (!Instance.Configuration.MetricsEnabled)
-                {
                     return true;
-                }
 
-                var meterProivder = Sdk.CreateMeterProviderBuilder()
-                    .ConfigureResource(resource => resource.AddService("GameServer"))
-                    .AddMeter(MetricsCollector.METER_NAME)
-                    .AddRuntimeInstrumentation()
-                    .AddOtlpExporter((options, readerOptions) =>
-                    {
-                        options.Endpoint = Instance.Configuration.OtlpEndpoint;
-                        readerOptions.PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = Instance.Configuration.MetricsExportInterval;
-                    })
-                    .Build();
-
-                MetricsCollector.StartCollecting();
-                meterProivder.ForceFlush();
-
+                MeterRegistry.RegisterMeterProviders();
                 return true;
             }
             catch (Exception e)
