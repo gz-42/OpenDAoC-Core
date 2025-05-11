@@ -38,7 +38,7 @@ namespace DOL.GS
                 _clients = EntityManager.UpdateAndGetAll<GameClient>(EntityManager.EntityType.Client, out _lastValidIndex);
             }
 
-            Parallel.For(0, _lastValidIndex + 1, BeginTickInternal);
+            GameLoop.DoWork(_lastValidIndex + 1, BeginTickInternal);
             Diagnostics.StopPerfCounter(SERVICE_NAME);
         }
 
@@ -46,7 +46,7 @@ namespace DOL.GS
         {
             GameLoop.CurrentServiceTick = SERVICE_NAME;
             Diagnostics.StartPerfCounter(SERVICE_NAME);
-            Parallel.For(0, _lastValidIndex + 1, EndTickInternal);
+            GameLoop.DoWork(_lastValidIndex + 1, EndTickInternal);
 
             if (Diagnostics.CheckEntityCounts)
                 Diagnostics.PrintEntityCount(SERVICE_NAME, ref _entityCount, _clients.Count);
@@ -715,7 +715,7 @@ namespace DOL.GS
                 }
             }
 
-            List<GameNPC> npcsInRange = player.GetObjectsInRadius<GameNPC>(eGameObjectType.NPC, WorldMgr.VISIBILITY_DISTANCE);
+            IReadOnlyList<GameNPC> npcsInRange = player.GetObjectsInRadius<GameNPC>(eGameObjectType.NPC, WorldMgr.VISIBILITY_DISTANCE);
             GameObject targetObject = player.TargetObject;
             GameNPC pet = player.ControlledBrain?.Body;
             CachedNpcValues cachedTargetValues = null;
@@ -779,7 +779,7 @@ namespace DOL.GS
                     itemUpdateCache[item] = (itemUpdateCache[item].Item1, true);
             }
 
-            List<GameStaticItem> itemsInRange = player.GetObjectsInRadius<GameStaticItem>(eGameObjectType.ITEM, WorldMgr.VISIBILITY_DISTANCE);
+            IReadOnlyList<GameStaticItem> itemsInRange = player.GetObjectsInRadius<GameStaticItem>(eGameObjectType.ITEM, WorldMgr.VISIBILITY_DISTANCE);
 
             foreach (GameStaticItem itemInRange in itemsInRange)
             {
@@ -806,7 +806,7 @@ namespace DOL.GS
                     doorUpdateCache.Remove(door, out _);
             }
 
-            List<GameDoorBase> doorsInRange = player.GetObjectsInRadius<GameDoorBase>(eGameObjectType.DOOR, WorldMgr.VISIBILITY_DISTANCE);
+            IReadOnlyList<GameDoorBase> doorsInRange = player.GetObjectsInRadius<GameDoorBase>(eGameObjectType.DOOR, WorldMgr.VISIBILITY_DISTANCE);
 
             foreach (GameDoorBase doorInRange in doorsInRange)
             {

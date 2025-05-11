@@ -6383,7 +6383,7 @@ namespace DOL.GS
                 ((GamePlayer)killer).Out.SendMessage(playerMessage, messageType, eChatLoc.CL_SystemWindow);
             }
 
-            List<GamePlayer> players;
+            IReadOnlyList<GamePlayer> players;
 
             if (messageDistance == 0)
                 players = ClientService.GetPlayersOfRegion(CurrentRegion);
@@ -8376,13 +8376,7 @@ namespace DOL.GS
                 return false;
 
             if (CurrentRegion.GetZone(X, Y) == null)
-            {
-                if (Client.Account.PrivLevel < 3 && !TempProperties.GetProperty<bool>("isbeingbanned"))
-                {
-                    TempProperties.SetProperty("isbeingbanned", true);
-                    MoveToBind();
-                }
-            }
+                MoveToBind();
 
             IsJumping = false;
 
