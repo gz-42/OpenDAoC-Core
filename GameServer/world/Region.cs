@@ -1500,7 +1500,7 @@ namespace DOL.GS
         public List<GameNPC> GetNPCsInRadius(Point3D point, ushort radius)
         {
             List<GameNPC> result = new();
-            GetInRadius<GameNPC>(point, eGameObjectType.ITEM, radius, result);
+            GetInRadius<GameNPC>(point, eGameObjectType.NPC, radius, result);
             return result;
         }
 
@@ -1508,7 +1508,7 @@ namespace DOL.GS
         public List<GamePlayer> GetPlayersInRadius(Point3D point, ushort radius)
         {
             List<GamePlayer> result = new();
-            GetInRadius<GamePlayer>(point, eGameObjectType.ITEM, radius, result);
+            GetInRadius<GamePlayer>(point, eGameObjectType.PLAYER, radius, result);
             return result;
         }
 
@@ -1516,7 +1516,7 @@ namespace DOL.GS
         public List<GameDoorBase> GetDoorsInRadius(Point3D point, ushort radius)
         {
             List<GameDoorBase> result = new();
-            GetInRadius<GameDoorBase>(point, eGameObjectType.ITEM, radius, result);
+            GetInRadius<GameDoorBase>(point, eGameObjectType.DOOR, radius, result);
             return result;
         }
 
