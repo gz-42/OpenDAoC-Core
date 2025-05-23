@@ -19,6 +19,9 @@ namespace DOL.GS
 
         private class ConcurrentLinkedList<T> : IConcurrentLinkedList<T> where T : class
         {
+            // The enumerator returned by this collection holds a read lock and MUST be disposed.
+            // Do not store the enumerator or pass it around - use only in foreach loops.
+
             private LinkedList<T> _list = new();
             private ReaderWriterLockSlim _lock = new();
 
@@ -86,13 +89,13 @@ namespace DOL.GS
                 return GetEnumerator();
             }
 
-            public sealed class Enumerator : IEnumerator<LinkedListNode<T>>
+            public struct Enumerator : IEnumerator<LinkedListNode<T>>
             {
                 private LinkedList<T> _list;
                 private SimpleDisposableLock _lock;
 
                 public LinkedListNode<T> Current { get; private set; }
-                object IEnumerator.Current => Current;
+                readonly object IEnumerator.Current => Current;
 
                 public Enumerator(LinkedList<T> list, SimpleDisposableLock @lock)
                 {
@@ -116,6 +119,7 @@ namespace DOL.GS
                 public void Dispose()
                 {
                     _lock.Dispose();
+                    _lock = null;
                 }
             }
         }
@@ -140,8 +144,6 @@ namespace DOL.GS
                 throw new InvalidOperationException("Cannot remove from a static empty list.");
             }
 
-            private EmptyConcurrentLinkedList() { }
-
             public Enumerator GetEnumerator()
             {
                 return _enumerator;
@@ -157,20 +159,20 @@ namespace DOL.GS
                 return GetEnumerator();
             }
 
-            public sealed class Enumerator : IEnumerator<LinkedListNode<T>>
+            public struct Enumerator : IEnumerator<LinkedListNode<T>>
             {
                 public LinkedListNode<T> Current { get; private set; }
-                object IEnumerator.Current => Current;
+                readonly object IEnumerator.Current => Current;
 
                 public Enumerator() { }
 
-                public bool MoveNext()
+                public readonly bool MoveNext()
                 {
                     return false;
                 }
 
-                public void Reset() { }
-                public void Dispose() { }
+                public readonly void Reset() { }
+                public readonly void Dispose() { }
             }
 
             private static class Holder
