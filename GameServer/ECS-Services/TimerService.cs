@@ -27,20 +27,22 @@ namespace DOL.GS
             Diagnostics.StopPerfCounter(SERVICE_NAME);
         }
 
-        public static void RunActionAfterTask(Task task, Action continuation)
+        public static void ScheduleActionAfterTask<T>(Task task, ContinuationAction<T> continuation, T argument, GameObject owner)
         {
-            task.ContinueWith(t =>
+            ContinuationActionTimerState<T> state = new(owner, continuation, argument);
+
+            task.ContinueWith(static (task, state) =>
             {
-                if (t.IsFaulted)
+                if (task.IsFaulted)
                 {
                     if (log.IsErrorEnabled)
-                        log.Error("Async task failed", t.Exception);
+                        log.Error("Async task failed", task.Exception);
 
                     return;
                 }
-            });
 
-            _ = new ContinuationActionTimer(null, continuation);
+                _ = new ContinuationActionTimer<T>(state as ContinuationActionTimerState<T>);
+            }, state);
         }
 
         private static void TickInternal(int index)
@@ -71,20 +73,38 @@ namespace DOL.GS
             }
         }
 
-        private class ContinuationActionTimer : ECSGameTimerWrapperBase
-        {
-            private Action _continuationAction;
+        public delegate bool ContinuationAction<T>(T argument);
 
-            public ContinuationActionTimer(GameObject owner, Action continuationAction) : base(owner)
+        private class ContinuationActionTimer<T> : ECSGameTimerWrapperBase
+        {
+            private ContinuationAction<T> _continuationAction;
+            private T _argument;
+
+            public ContinuationActionTimer(ContinuationActionTimerState<T> state) : base(state.Owner)
             {
-                _continuationAction = continuationAction;
+                _continuationAction = state.ContinuationAction;
+                _argument = state.Argument;
                 Start(0);
             }
 
             protected override int OnTick(ECSGameTimer timer)
             {
-                _continuationAction();
+                _continuationAction(_argument);
                 return 0;
+            }
+        }
+
+        private class ContinuationActionTimerState<T>
+        {
+            public GameObject Owner { get; }
+            public ContinuationAction<T> ContinuationAction { get; }
+            public T Argument { get; }
+
+            public ContinuationActionTimerState(GameObject owner, ContinuationAction<T> continuationAction, T argument)
+            {
+                Owner = owner;
+                ContinuationAction = continuationAction;
+                Argument = argument;
             }
         }
     }
