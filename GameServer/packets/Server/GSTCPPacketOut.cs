@@ -31,9 +31,9 @@ namespace DOL.GS.PacketHandler
 
         public static PooledObjectKey PooledObjectKey => PooledObjectKey.TcpOutPacket;
 
-        public static GSTCPPacketOut Rent(Action<GSTCPPacketOut> initializer)
+        public static GSTCPPacketOut GetForTick(Action<GSTCPPacketOut> initializer)
         {
-            return GameLoop.Rent(PooledObjectKey, initializer);
+            return GameLoop.GetForTick(PooledObjectKey, initializer);
         }
     }
 }
