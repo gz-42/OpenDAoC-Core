@@ -118,8 +118,6 @@ namespace DOL.GS.PacketHandler.Client.v168
 
                 if (!player.AddToWorld())
                 {
-                    log.ErrorFormat("Failed to add player to the region! {0}", player.ToString());
-
                     if (player.Client != null)
                     {
                         player.Client.Out.SendPlayerQuit(true);
@@ -176,6 +174,9 @@ namespace DOL.GS.PacketHandler.Client.v168
                     player.Stealth(false);
 
                 player.Out.SendSetControlledHorse(player);
+
+                player.SwitchQuiver((eActiveQuiverSlot) (player.DBCharacter.ActiveWeaponSlot & 0xF0), false);
+                player.SwitchWeapon((eActiveWeaponSlot) (player.DBCharacter.ActiveWeaponSlot & 0x0F));
 
                 if (log.IsDebugEnabled)
                     log.DebugFormat($"Client {player.Client.Account.Name}({player.Name} PID:{player.Client.SessionID} OID:{player.ObjectID}) entering Region {player.CurrentRegion.Description}(ID:{player.CurrentRegionID})");

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
@@ -21,7 +20,6 @@ namespace DOL.GS
         private static long _stopwatchFrequencyMilliseconds = Stopwatch.Frequency / 1000;
         private static GameLoopStats _gameLoopStats;
         private static bool _running;
-        private static ConcurrentQueue<IPostedAction> _postedActions = new(); // Actions to be executed at the end of a frame. Single-threaded.
 
         public static long TickRate { get; private set; }
         public static long GameLoopTime { get; private set; }
@@ -93,11 +91,6 @@ namespace DOL.GS
             return _threadPool.GetForTick(poolKey, initializer);
         }
 
-        public static void Post<TState>(Action<TState> action, TState state) where TState : class
-        {
-            _postedActions.Enqueue(new PostedAction<TState>(action, state));
-        }
-
         private static void Run()
         {
             if (Environment.ProcessorCount == 1)
@@ -146,6 +139,7 @@ namespace DOL.GS
             {
                 ECS.Debug.Diagnostics.StartPerfCounter(THREAD_NAME);
 
+                GameLoopService.BeginTick();
                 TimerService.Tick();
                 ClientService.BeginTick();
                 NpcService.Tick();
@@ -157,12 +151,7 @@ namespace DOL.GS
                 ClientService.EndTick();
                 DailyQuestService.Tick();
                 WeeklyQuestService.Tick();
-
-                ExecuteWork(_postedActions.Count, static _ =>
-                {
-                    if (_postedActions.TryDequeue(out IPostedAction result))
-                        result.Invoke();
-                });
+                GameLoopService.EndTick();
 
                 _threadPool.PrepareForNextTick();
 
@@ -238,28 +227,6 @@ namespace DOL.GS
 
             if (log.IsInfoEnabled)
                 log.Info($"Thread \"{Thread.CurrentThread.Name}\" is stopping");
-        }
-
-        private readonly struct PostedAction<T> : IPostedAction
-        {
-            public readonly Action<T> Action;
-            public readonly T State;
-
-            public PostedAction(Action<T> action, T state)
-            {
-                Action = action;
-                State = state;
-            }
-
-            public void Invoke()
-            {
-                Action(State);
-            }
-        }
-
-        private interface IPostedAction
-        {
-            void Invoke();
         }
     }
 }
