@@ -103,7 +103,7 @@ namespace DOL.GS
         }
 
         public bool IsPlaying => _clientState is eClientState.Playing or eClientState.Linkdead;
-        public int SessionID => ServiceObjectId.Value + 1;
+        public ushort SessionID => SessionId.Value;
         public ServiceObjectId ServiceObjectId { get; set; } = new(ServiceObjectType.Client);
         public bool HasSeenPatchNotes { get; set; }
         public List<Tuple<Specialization, List<Tuple<int, int, Skill>>>> TrainerSkillCache { get; set; }
@@ -274,6 +274,7 @@ namespace DOL.GS
                 }
 
                 ClientState = eClientState.Disconnected;
+                PacketProcessor?.Dispose();
                 ClientService.OnClientDisconnect(this);
                 GameEventMgr.Notify(GameClientEvent.Disconnected, this);
 
@@ -494,8 +495,10 @@ namespace DOL.GS
             }, this);
         }
 
-        public override void OnConnect()
+        public override void OnConnect(SessionId sessionId)
         {
+            base.OnConnect(sessionId);
+
             // `OnConnect` is exclusively called from outside the game loop.
             GameLoopService.PostBeforeTick(static state =>
             {

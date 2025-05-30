@@ -24,6 +24,7 @@ namespace DOL.GS
         private static SimpleDisposableLock _lock = new(LockRecursionPolicy.SupportsRecursion);
         private static int _lastValidIndex;
         private static int _clientCount;
+        private static GameClient[] _clientsBySessionId = new GameClient[ushort.MaxValue]; // Fast lookup by session ID.
 
         public static int ClientCount => _clientCount; // `_clients` contains null objects.
 
@@ -56,13 +57,12 @@ namespace DOL.GS
 
         private static void BeginTickInternal(int index)
         {
-            GameClient client = _clients[index];
-
-            if (client?.ServiceObjectId.IsSet != true)
-                return;
+            GameClient client = null;
 
             try
             {
+                client = _clients[index];
+
                 switch (client.ClientState)
                 {
                     case GameClient.eClientState.NotConnected:
@@ -109,16 +109,15 @@ namespace DOL.GS
 
         private static void EndTickInternal(int index)
         {
-            GameClient client = _clients[index];
-
-            if (client?.ServiceObjectId.IsSet != true)
-                return;
-
-            if (Diagnostics.CheckEntityCounts)
-                Interlocked.Increment(ref _entityCount);
+            GameClient client = null;
 
             try
             {
+                if (Diagnostics.CheckEntityCounts)
+                    Interlocked.Increment(ref _entityCount);
+
+                client = _clients[index];
+
                 switch (client.ClientState)
                 {
                     case GameClient.eClientState.Connecting:
@@ -161,6 +160,18 @@ namespace DOL.GS
 
         public static void OnClientConnect(GameClient client)
         {
+            GameClient registeredClient = _clientsBySessionId[client.SessionId.Value];
+
+            if (registeredClient != null && log.IsWarnEnabled)
+            {
+                log.Warn($"A client with the same session ID ({client.SessionId.Value}) was already registered." +
+                            $"(Client: {client})" +
+                            $"(Existing Client: {registeredClient})");
+            }
+
+            // Let's just overwrite the existing client. Most likely `OnClientDisconnect` was not called for some reason.
+            _clientsBySessionId[client.SessionId.Value] = client;
+
             if (ServiceObjectStore.Add(client))
                 Interlocked.Increment(ref _clientCount);
             else if (log.IsWarnEnabled)
@@ -177,6 +188,13 @@ namespace DOL.GS
 
         public static void OnClientDisconnect(GameClient client)
         {
+            GameClient registeredClient = _clientsBySessionId[client.SessionId.Value];
+
+            if (registeredClient == null && log.IsWarnEnabled)
+                log.Warn($"A client with the session ID ({client.SessionId.Value}) was not registered. (Client: {client})");
+
+            _clientsBySessionId[client.SessionId.Value] = null;
+
             if (ServiceObjectStore.Remove(client))
                 Interlocked.Decrement(ref _clientCount);
             else if (log.IsWarnEnabled)
@@ -446,16 +464,9 @@ namespace DOL.GS
             }
         }
 
-        public static GameClient GetClientFromId(int id)
+        public static GameClient GetClientBySessionId(int id)
         {
-            if (--id < 0)
-                return null;
-
-            using (_lock)
-            {
-                _lock.EnterReadLock();
-                return id < _clients.Count ? _clients[id] : null;
-            }
+            return id < 1 || id >= _clientsBySessionId.Length ? null : _clientsBySessionId[id];
         }
 
         public static GameClient GetClientFromAccount(DbAccount account)
