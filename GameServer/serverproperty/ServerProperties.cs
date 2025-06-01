@@ -248,36 +248,6 @@ namespace DOL.GS.ServerProperties
 		public static int MAX_ITEMS_PER_PACKET;
 
 		/// <summary>
-		/// Number of times speed hack detected before banning.  Must be multiples of 5 (20, 25, 30, etc)
-		/// </summary>
-		[ServerProperty("system", "speedhack_tolerance", "Number of times speed hack detected before banning.  Multiples of 5 (20, 25, 30, etc)", 20)]
-		public static int SPEEDHACK_TOLERANCE;
-
-		/// <summary>
-		/// Turn on move detect
-		/// </summary>
-		[ServerProperty("system", "enable_movedetect", "Should the move detect code be enabled to kick possible movement hackers?", false)]
-		public static bool ENABLE_MOVEDETECT;
-
-		/// <summary>
-		/// Coords per second tolerance before player is identified as a hacker?
-		/// </summary>
-		[ServerProperty("system", "cps_tolerance", "Coords per second tolerance before player is identified as a hacker?", 1000)]
-		public static int CPS_TOLERANCE;
-
-		/// <summary>
-		/// Time tolerance before player is identified as move hacker
-		/// </summary>
-		[ServerProperty("system", "cps_time_tolerance", "Time tolerance for CPS before player is identified as a move hacker?", 200)]
-		public static int CPS_TIME_TOLERANCE;
-
-		/// <summary>
-		/// Z distance tolerance before player is identified as a jump hacker
-		/// </summary>
-		[ServerProperty("system", "jump_tolerance", "Z distance tolerance before player is identified as a jump hacker?", 200)]
-		public static int JUMP_TOLERANCE;
-
-		/// <summary>
 		/// Display centered screen messages if a player enters an area.
 		/// </summary>
 		[ServerProperty("system", "display_area_enter_screen_desc", "Display centered screen messages if a player enters an area.", false)]
@@ -1554,13 +1524,13 @@ namespace DOL.GS.ServerProperties
 		/// <summary>
 		/// Base RP value of a keep
 		/// </summary>
-		[ServerProperty("keeps", "keep_rp_base", "Base RP value of a keep", 4500)]
+		[ServerProperty("keeps", "keep_rp_base", "Base RP value of a keep", 0)] // Previously 4500.
 		public static int KEEP_RP_BASE;
 
 		/// <summary>
 		/// Base RP value of a tower
 		/// </summary>
-		[ServerProperty("keeps", "tower_rp_base", "Base RP value of a tower", 500)]
+		[ServerProperty("keeps", "tower_rp_base", "Base RP value of a tower", 0)] // Previously 500.
 		public static int TOWER_RP_BASE;
 
 		/// <summary>
@@ -1572,13 +1542,13 @@ namespace DOL.GS.ServerProperties
 		/// <summary>
 		/// Multiplier used to add or subtract RP worth based on keep level difference from 50.
 		/// </summary>
-		[ServerProperty("keeps", "keep_rp_multiplier", "Integer multiplier used to increase/decrease RP worth based on keep level difference from 50.", 50)]
+		[ServerProperty("keeps", "keep_rp_multiplier", "Integer multiplier used to increase/decrease RP worth based on keep level difference from 50.", 0)] // Previously 50.
 		public static int KEEP_RP_MULTIPLIER;
 
 		/// <summary>
 		/// Multiplier used to add or subtract RP worth based on tower level difference from 50.
 		/// </summary>
-		[ServerProperty("keeps", "tower_rp_multiplier", "Integer multiplier used to increase/decrease RP worth based on tower level difference from 50.", 50)]
+		[ServerProperty("keeps", "tower_rp_multiplier", "Integer multiplier used to increase/decrease RP worth based on tower level difference from 50.", 0)] // Previously 50.
 		public static int TOWER_RP_MULTIPLIER;
 
 		/// <summary>

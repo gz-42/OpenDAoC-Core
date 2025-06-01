@@ -884,13 +884,7 @@ namespace DOL.GS
             set => movementComponent.LastPositionUpdatePacketReceivedTime = value;
         }
 
-        public long LastHeadingUpdatePacketReceivedTime
-        {
-            get => movementComponent.LastHeadingUpdatePacketReceivedTime;
-            set => movementComponent.LastHeadingUpdatePacketReceivedTime = value;
-        }
-
-        public bool OnPositionPacketReceivedStart()
+        public bool IsPositionUpdateFromPacketAllowed()
         {
             if (_linkDeathTimer == null)
                 return true;
@@ -902,9 +896,9 @@ namespace DOL.GS
             return false;
         }
 
-        public void OnPositionPacketReceivedEnd()
+        public void OnPositionUpdateFromPacket()
         {
-            movementComponent.OnPositionPacketReceivedEnd();
+            movementComponent.OnPositionUpdateFromPacket();
         }
 
         public void OnHeadingPacketReceived()
@@ -4455,15 +4449,12 @@ namespace DOL.GS
         {
             get
             {
-                // http://www.camelotherald.com/more/2275.shtml
-                // new 1.81D formula
-                // Realm point value = (level - 20)squared + (realm rank level x 5) + (champion level x 10) + (master level (squared)x 5)
-                //we use realm level 1L0 = 0, mythic uses 1L0 = 10, so we + 10 the realm level
-                int level = Math.Max(0, Level - 20);
-                if (level == 0)
-                    return Math.Max(1, (RealmLevel + 10) * 5);
-
-                return Math.Max(1, level * level + (RealmLevel + 10) * 5);
+                // Pre-1.81 formula: https://camelotherald.fandom.com/wiki/Patch_Notes:_Version_1.81
+                // 25 at RR1, level 25.
+                // 225 at RR1, level 35, 245 at RR3, level 35.
+                // 900 at RR1, level 50. 990 at RR10, level 50.
+                int modifiedLevel = Level - 20;
+                return Math.Max(1, modifiedLevel * modifiedLevel) + RealmLevel;
             }
         }
 
@@ -8333,7 +8324,6 @@ namespace DOL.GS
                 return false;
             }
 
-            IsJumping = false;
             m_invulnerabilityTick = 0;
             craftComponent = new CraftComponent(this);
 
@@ -8380,8 +8370,6 @@ namespace DOL.GS
 
             if (CurrentRegion.GetZone(X, Y) == null)
                 MoveToBind();
-
-            IsJumping = false;
 
             if (m_invulnerabilityTimer != null)
             {
@@ -8464,8 +8452,6 @@ namespace DOL.GS
             {
                 if (Steed != null)
                     DismountSteed(true);
-
-                IsJumping = true;
             }
 
             bool movePet = false;
@@ -8483,6 +8469,7 @@ namespace DOL.GS
             Z = z;
             Heading = heading;
             IsSitting = false;
+            movementComponent.OnTeleportOrRegionChange();
 
             if (regionID != CurrentRegionID)
             {
@@ -8838,7 +8825,6 @@ namespace DOL.GS
 
         public Zone LastPositionUpdateZone { get; set; }
         public long LastPlayerActivityTime { get; set; }
-        public Point3DFloat LastPositionUpdatePoint { get; set; } = new(0, 0, 0);
 
         /// <summary>
         /// Holds the players max Z for fall damage
@@ -14111,20 +14097,14 @@ namespace DOL.GS
             movementComponent ??= base.movementComponent as PlayerMovementComponent;
             styleComponent ??= base.styleComponent as PlayerStyleComponent;
 
-            IsJumping = false;
             m_steed = new WeakRef(null);
             m_client = client;
             m_dbCharacter = dbChar;
             m_controlledHorse = new ControlledHorse(this);
             m_lastUniqueLocations = new GameLocation[4];
-            m_canFly = false;
 
             CreateInventory();
 
-            m_enteredGame = false;
-            m_customDialogCallback = null;
-            m_sitting = false;
-            m_isWireframe = false;
             m_characterClass = new DefaultCharacterClass();
             m_groupIndex = 0xFF;
             m_saveInDB = true;
@@ -14187,7 +14167,6 @@ namespace DOL.GS
 
             return true;
         }
-
 
         /// <summary>
         /// Player is delving a spell
