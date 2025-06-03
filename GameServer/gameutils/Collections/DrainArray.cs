@@ -8,13 +8,14 @@ namespace DOL.GS
     // Allows concurrent, lock-free add operations from multiple producer threads.
     // Designed for a single consumer to drain items; draining and adding must not occur simultaneously.
     // If the internal buffer overflows, excess items are temporarily stored in a concurrent queue and the buffer is automatically resized (never shrinks).
-    public sealed class DrainArray<T>
+    public class DrainArray<T>
     {
         private T[] _buffer;
         private int _writeIndex;
         private ConcurrentQueue<T> _overflowQueue = new();
         private bool _overflowed;
         private bool _draining;
+        private int _adding;
 
         public bool Any => Volatile.Read(ref _writeIndex) > 0; // Not accurate.
 
@@ -29,14 +30,26 @@ namespace DOL.GS
             if (Volatile.Read(ref _draining))
                 throw new InvalidOperationException($"Cannot {nameof(Add)} while {nameof(DrainTo)} is in progress.");
 
-            int index = Interlocked.Increment(ref _writeIndex) - 1;
+            Interlocked.Increment(ref _adding);
 
-            if (index < _buffer.Length)
-                _buffer[index] = item;
-            else
+            try
             {
-                _overflowQueue.Enqueue(item);
-                _overflowed = true;
+                if (Volatile.Read(ref _draining))
+                    throw new InvalidOperationException($"Cannot {nameof(Add)} while {nameof(DrainTo)} is in progress.");
+
+                int index = Interlocked.Increment(ref _writeIndex) - 1;
+
+                if (index < _buffer.Length)
+                    _buffer[index] = item;
+                else
+                {
+                    _overflowQueue.Enqueue(item);
+                    _overflowed = true;
+                }
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _adding);
             }
         }
 
@@ -47,6 +60,9 @@ namespace DOL.GS
 
         public void DrainTo<TState>(Action<T, TState> action, TState state)
         {
+            if (Volatile.Read(ref _adding) > 0)
+                throw new InvalidOperationException($"Cannot {nameof(DrainTo)} while {nameof(Add)} is in progress.");
+
             if (Interlocked.Exchange(ref _draining, true) != false)
                 throw new InvalidOperationException($"Concurrent {nameof(DrainTo)} detected.");
 
@@ -70,7 +86,8 @@ namespace DOL.GS
                         action(result, state);
                     }
 
-                    ResizeBuffer(overflowCount);
+                    int newSize = Math.Max(_buffer.Length * 2, _buffer.Length + overflowCount + 1024);
+                    _buffer = new T[newSize];
                     _overflowed = false;
                     return;
                 }
@@ -78,22 +95,12 @@ namespace DOL.GS
                 for (int i = 0; i < count; i++)
                     action(_buffer[i], state);
 
-                Array.Clear(_buffer);
+                Array.Clear(_buffer, 0, count);
             }
             finally
             {
                 Volatile.Write(ref _draining, false);
             }
-        }
-
-        private void ResizeBuffer(int minToAdd)
-        {
-            int newSize = _buffer.Length * 2;
-
-            while (newSize <= minToAdd)
-                newSize *= 2;
-
-            _buffer = new T[newSize];
         }
     }
 }
