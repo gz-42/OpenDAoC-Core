@@ -6,6 +6,8 @@
         Brain,
         AttackComponent,
         CastingComponent,
+        EffectListComponent,
+        MovementComponent,
         CraftComponent,
         ObjectChangingSubZone,
         LivingBeingKilled,

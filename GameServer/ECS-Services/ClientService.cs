@@ -25,6 +25,7 @@ namespace DOL.GS
         private static int _lastValidIndex;
         private static int _clientCount;
         private static GameClient[] _clientsBySessionId = new GameClient[ushort.MaxValue]; // Fast lookup by session ID.
+        private static Trie<GamePlayer> _playerNameTrie = new();
 
         public static int ClientCount => _clientCount; // `_clients` contains null objects.
 
@@ -93,8 +94,6 @@ namespace DOL.GS
                         if (ServiceUtils.ShouldTick(player.LastWorldUpdate + Properties.WORLD_PLAYER_UPDATE_INTERVAL))
                             UpdateWorld(player);
 
-                        player.effectListComponent.Tick();
-                        player.movementComponent.Tick();
                         break;
                     }
                     default:
@@ -207,6 +206,16 @@ namespace DOL.GS
                          $"(IsPendingRemoval: {serviceObjectId.IsPendingAddition})" +
                          $"\n{Environment.StackTrace}");
             }
+        }
+
+        public static void OnPlayerJoin(GamePlayer player)
+        {
+            _playerNameTrie.Insert(player.Name, player);
+        }
+
+        public static void OnPlayerLeave(GamePlayer player)
+        {
+            _playerNameTrie.Remove(player.Name, player);
         }
 
         public static GamePlayer GetPlayer<T>(CheckPlayerAction<T> action)
@@ -325,51 +334,66 @@ namespace DOL.GS
 
         public static GamePlayer GetPlayerByExactName(string playerName)
         {
-            return GetPlayer(Predicate, playerName);
+            GamePlayer player = _playerNameTrie.FindExact(playerName);
 
-            static bool Predicate(GamePlayer player, string playerName)
+            if (!player.Client.IsPlaying || player.ObjectState is not GameObject.eObjectState.Active)
             {
-                if (!player.Client.IsPlaying || player.ObjectState is not GameObject.eObjectState.Active)
-                    return false;
+                if (log.IsErrorEnabled)
+                    log.Error($"Player was found in the trie, but is not playing or is not active. Removing from trie. (Player: {player})");
 
-                if (player.Name.Equals(playerName, StringComparison.OrdinalIgnoreCase))
-                    return true;
-
-                return false;
+                _playerNameTrie.Remove(playerName, player);
+                return null;
             }
+
+            return player;
         }
 
         public static GamePlayer GetPlayerByPartialName(string playerName, out PlayerGuessResult result)
         {
-            List<GamePlayer> partialMatches = new();
-            GamePlayer targetPlayer = GetPlayer(Predicate, (playerName, partialMatches));
+            List<GamePlayer> matches = _playerNameTrie.FindByPrefix(playerName);
 
-            if (targetPlayer != null)
-                result = PlayerGuessResult.FOUND_EXACT;
-            else if (partialMatches.Count < 1)
-                result = PlayerGuessResult.NOT_FOUND;
-            else if (partialMatches.Count > 1)
-                result = PlayerGuessResult.FOUND_MULTIPLE;
-            else
+            if (matches.Count == 0)
             {
-                result = PlayerGuessResult.FOUND_PARTIAL;
-                targetPlayer = partialMatches[0];
+                result = PlayerGuessResult.NOT_FOUND;
+                return null;
             }
 
-            return targetPlayer;
+            GamePlayer player = matches[0];
 
-            static bool Predicate(GamePlayer player, (string playerName, List<GamePlayer> partialList) args)
+            // The first element may be an exact match.
+            if (player.Name.Length == playerName.Length)
             {
-                if (!player.Client.IsPlaying || player.ObjectState is not GameObject.eObjectState.Active)
+                if (ValidateAndRemoveIfInactive(player))
+                    return GetPlayerByPartialName(playerName, out result);
+
+                result = PlayerGuessResult.FOUND_EXACT;
+                return player;
+            }
+
+            // Partial match found.
+            if (matches.Count == 1)
+            {
+                if (ValidateAndRemoveIfInactive(player))
+                    return GetPlayerByPartialName(playerName, out result);
+
+                result = PlayerGuessResult.FOUND_PARTIAL;
+                return player;
+            }
+
+            // Multiple matches found.
+            result = PlayerGuessResult.FOUND_MULTIPLE;
+            return null;
+
+            bool ValidateAndRemoveIfInactive(GamePlayer player)
+            {
+                if (player.Client.IsPlaying && player.ObjectState is GameObject.eObjectState.Active)
                     return false;
 
-                if (player.Name.Equals(args.playerName, StringComparison.OrdinalIgnoreCase))
-                    return true;
+                if (log.IsErrorEnabled)
+                    log.Error($"Player was found in the trie, but is not playing or is not active. Removing from trie. (Player: {player})");
 
-                if (player.Name.StartsWith(args.playerName, StringComparison.OrdinalIgnoreCase))
-                    args.partialList.Add(player);
-
-                return false;
+                _playerNameTrie.Remove(playerName, player);
+                return true;
             }
         }
 
