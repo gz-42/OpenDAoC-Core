@@ -62,7 +62,7 @@ namespace ECS.Debug
 
             if (_gameEventMgrNotifyProfilingEnabled)
             {
-                if ((GameLoop.GetCurrentTime() - _gameEventMgrNotifyTimerStartTick) > _gameEventMgrNotifyTimerInterval)
+                if ((GameLoop.GetRealTime() - _gameEventMgrNotifyTimerStartTick) > _gameEventMgrNotifyTimerInterval)
                     ReportGameEventMgrNotifyTimes();
             }
 
@@ -128,9 +128,7 @@ namespace ECS.Debug
                     foreach (var counter in _perfCounters)
                     {
                         string counterName = counter.Key;
-                        float elapsed = (float)counter.Value.Elapsed.TotalMilliseconds;
-                        string elapsedString = elapsed.ToString();
-                        elapsedString = Util.TruncateString(elapsedString, 4);
+                        string elapsedString = $"{counter.Value.Elapsed.TotalMilliseconds:0.##}";
                         logString += $"{counterName} {elapsedString}ms | ";
                     }
 
@@ -175,7 +173,7 @@ namespace ECS.Debug
 
             _gameEventMgrNotifyProfilingEnabled = true;
             _gameEventMgrNotifyTimerInterval = IntervalMilliseconds;
-            _gameEventMgrNotifyTimerStartTick = GameLoop.GetCurrentTime();
+            _gameEventMgrNotifyTimerStartTick = GameLoop.GetRealTime();
         }
 
         public static void StopGameEventMgrNotifyTimeReporting()
@@ -189,7 +187,7 @@ namespace ECS.Debug
 
         private static void ReportGameEventMgrNotifyTimes()
         {
-            string ActualInterval = Util.TruncateString((GameLoop.GetCurrentTime() - _gameEventMgrNotifyTimerStartTick).ToString(), 5);
+            string ActualInterval = Util.TruncateString((GameLoop.GetRealTime() - _gameEventMgrNotifyTimerStartTick).ToString(), 5);
             log.Debug($"==== GameEventMgr Notify() Costs (Requested Interval: {_gameEventMgrNotifyTimerInterval}ms | Actual Interval: {ActualInterval}ms) ====");
 
             lock (_gameEventMgrNotifyLock)
@@ -224,7 +222,7 @@ namespace ECS.Debug
                 }
 
                 _gameEventMgrNotifyTimes.Clear();
-                _gameEventMgrNotifyTimerStartTick = GameLoop.GetCurrentTime();
+                _gameEventMgrNotifyTimerStartTick = GameLoop.GetRealTime();
                 log.Debug("---------------------------------------------------------------------------");
             }
         }
