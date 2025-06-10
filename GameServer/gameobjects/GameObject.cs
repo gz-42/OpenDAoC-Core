@@ -692,6 +692,10 @@ namespace DOL.GS
 			Notify(GameObjectEvent.AddToWorld, this);
 			ObjectState = eObjectState.Active;
 			m_spawnTick = GameLoop.GameLoopTime;
+
+			if (!_isDataQuestsLoaded)
+				LoadDataQuests();
+
 			return true;
 		}
 
@@ -800,6 +804,7 @@ namespace DOL.GS
 		/// </summary>
 		protected List<DataQuest> _dataQuests = new();
 		protected readonly Lock _dataQuestsLock = new();
+		private bool _isDataQuestsLoaded;
 
 		/// <summary>
 		/// Fill the data quest cache with all DBDataQuest objects
@@ -851,6 +856,8 @@ namespace DOL.GS
 				foreach (DbDataQuest quest in globalQuests)
 					LoadQuest(this, quest, loader);
 			}
+
+			_isDataQuestsLoaded = true;
 
 			static void LoadQuest(GameObject obj, DbDataQuest quest, GamePlayer loader)
 			{
@@ -1219,9 +1226,6 @@ namespace DOL.GS
 		/// </summary>
 		public GameObject()
 		{
-			//Objects should NOT be saved back to the DB
-			//as standard! We want our mobs/items etc. at
-			//the same startingspots when we restart!
 			m_saveInDB = false;
 			m_name = string.Empty;
 			m_ObjectState = eObjectState.Inactive;
