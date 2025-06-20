@@ -967,22 +967,27 @@ namespace DOL.GS
                             DbInventoryItem attackWeapon = owner.ActiveWeapon;
                             DbInventoryItem leftWeapon = owner.ActiveLeftWeapon;
 
-                            int numTargetsCanHit = style.ID switch
+                            bool IsShieldSwipe = style.ID == 600;
+                            int numTargetsCanHit;
+
+                            // Tribal Assault: Hits 1 extra target.
+                            // Clan's Might: Hits 1 extra target.
+                            // Totemic Wrath: Hits 2 extra target.
+                            // Totemic Sacrifice: Hits 3 extra target.
+                            // Shield Swipe: No cap?
+                            if (IsShieldSwipe)
+                                numTargetsCanHit = 255;
+                            else
                             {
-                                374 => 1, // Tribal Assault: Hits 2 targets.
-                                377 => 1, // Clan's Might: Hits 2 targets.
-                                379 => 2, // Totemic Wrath: Hits 3 targets.
-                                384 => 3, // Totemic Sacrifice: Hits 4 targets.
-                                600 => 255, // Shield Swipe: No cap.
-                                _ => 0
-                            };
+                                StyleProcInfo styleProcInfo = style.Procs.Where(x => x.Spell.SpellType is eSpellType.MultiTarget).FirstOrDefault();
+                                numTargetsCanHit = styleProcInfo == null ? 0 : (int) styleProcInfo.Spell.Value;
+                            }
 
                             if (numTargetsCanHit <= 0)
                                 break;
 
-                            bool IsNotShieldSwipe = style.ID != 600;
-
-                            if (IsNotShieldSwipe)
+                            // This implementation of Shield Swipe doesn't affect players.
+                            if (!IsShieldSwipe)
                             {
                                 foreach (GamePlayer playerInRange in owner.GetPlayersInRadius((ushort) AttackRange))
                                 {
@@ -1018,17 +1023,12 @@ namespace DOL.GS
 
                             foreach (GameObject extraTarget in extraTargets)
                             {
+                                // Damage bonus against sitting targets is normally set by `AttackAction`.
                                 if (extraTarget is GamePlayer player && player.IsSitting)
                                     effectiveness *= 2;
 
-                                // TODO: Figure out why Shield Swipe is handled differently here.
-                                if (IsNotShieldSwipe)
-                                {
-                                    weaponAction = new WeaponAction(playerOwner, extraTarget, attackWeapon, leftWeapon, effectiveness, AttackSpeed(attackWeapon), null);
-                                    weaponAction.Execute();
-                                }
-                                else
-                                    LivingMakeAttack(action, extraTarget, attackWeapon, null, 1, Properties.SPELL_INTERRUPT_DURATION, false);
+                                weaponAction = new WeaponAction(playerOwner, extraTarget, attackWeapon, leftWeapon, effectiveness, AttackSpeed(attackWeapon), null);
+                                weaponAction.Execute();
                             }
                         }
 
@@ -1067,9 +1067,16 @@ namespace DOL.GS
                 IsOffHand = weapon != null && weapon.SlotPosition is Slot.LEFTHAND
             };
 
-            // Asp style range add.
-            IEnumerable<StyleProcInfo> rangeProc = style?.Procs.Where(x => x.Spell.SpellType is eSpellType.StyleRange);
-            int addRange = rangeProc?.Any() == true ? (int) (rangeProc.First().Spell.Value - AttackRange) : 0;
+            int attackRange = AttackRange;
+
+            if (style != null)
+            {
+                StyleProcInfo styleProcInfo = style?.Procs.Where(x => x.Spell.SpellType is eSpellType.StyleRange).FirstOrDefault();
+
+                if (styleProcInfo != null)
+                    attackRange = (int) styleProcInfo.Spell.Value; // Fixed range for some reason, don't add to attack range.
+            }
+
             ad.AttackType = AttackData.GetAttackType(weapon, dualWield, ad.Attacker);
 
             // No target.
@@ -1109,7 +1116,7 @@ namespace DOL.GS
             // Melee range check (ranged is already done at this point).
             if (ad.AttackType is not AttackData.eAttackType.Ranged)
             {
-                if (!owner.IsWithinRadius(ad.Target, AttackRange + addRange))
+                if (!owner.IsWithinRadius(ad.Target, attackRange))
                 {
                     ad.AttackResult = eAttackResult.OutOfRange;
                     SendAttackingCombatMessages(action, ad);
@@ -1737,9 +1744,13 @@ namespace DOL.GS
             if (ad.AttackType is AttackData.eAttackType.Ranged or AttackData.eAttackType.Spell)
             {
                 // Nature's shield, 100% block chance, 120° frontal angle.
-                if (owner.IsObjectInFront(ad.Attacker, 120) && (owner.styleComponent.NextCombatStyle?.ID == 394 || owner.styleComponent.NextCombatBackupStyle?.ID == 394))
+                StyleProcInfo styleProcInfo =
+                    owner.styleComponent.NextCombatStyle?.Procs.Where(x => x.Spell.SpellType is eSpellType.NaturesShield).FirstOrDefault() ??
+                    owner.styleComponent.NextCombatBackupStyle?.Procs.Where(x => x.Spell.SpellType is eSpellType.NaturesShield).FirstOrDefault();
+
+                if (styleProcInfo != null && owner.IsObjectInFront(ad.Attacker, 120))
                 {
-                    ad.BlockChance = 100;
+                    ad.BlockChance = styleProcInfo.Spell.Value;
                     return true;
                 }
             }
