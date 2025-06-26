@@ -43,9 +43,9 @@ namespace DOL.GS.Spells
 			if (Spell.Value == 99 && (target.effectListComponent.ContainsEffectForEffectType(eEffect.SnareImmunity) || target.effectListComponent.ContainsEffectForEffectType(eEffect.SpeedOfSound)))
 				//FindStaticEffectOnTarget(target, typeof(MezzRootImmunityEffect)) != null)
 			{
-				MessageToCaster("Your target is immune!", eChatType.CT_SpellResisted);
+				MessageToCaster("Your target is immune to this effect!", eChatType.CT_SpellResisted);
 				target.StartInterruptTimer(target.SpellInterruptDuration, AttackData.eAttackType.Spell, Caster);
-				OnSpellResisted(target);
+				OnSpellNegated(target, SpellNegatedReason.Immune);
 				return;
 			}
 
