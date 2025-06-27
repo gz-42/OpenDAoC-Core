@@ -124,6 +124,7 @@ namespace DOL.GS
             if (GameLoop.GameLoopTime - _nextMeleeTick > MINIMUM_MELEE_DELAY_AFTER_RANGED_ATTACK)
                 _nextMeleeTick = GameLoop.GameLoopTime + MINIMUM_MELEE_DELAY_AFTER_RANGED_ATTACK;
 
+            _nextRangedTick = GameLoop.GameLoopTime;
             rangeAttackComponent.RangedAttackState = eRangedAttackState.None;
         }
 
@@ -399,7 +400,9 @@ namespace DOL.GS
             _owner.rangeAttackComponent.AttackStartTime = GameLoop.GameLoopTime;
             _owner.rangeAttackComponent.RangedAttackState = eRangedAttackState.Aim;
 
-            if (_owner.rangeAttackComponent.RangedAttackType is not eRangedAttackType.Long)
+            if (_owner.rangeAttackComponent.RangedAttackType is eRangedAttackType.Long)
+                (EffectListService.GetEffectOnTarget(_owner, eEffect.TrueShot) as TrueShotECSGameEffect)?.Cancel(true);
+            else
             {
                 _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Normal;
 
@@ -407,7 +410,7 @@ namespace DOL.GS
                     _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.SureShot;
                 else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.RapidFire))
                     _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.RapidFire;
-                else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.SureShot))
+                else if (_owner.effectListComponent.ContainsEffectForEffectType(eEffect.TrueShot))
                     _owner.rangeAttackComponent.RangedAttackType = eRangedAttackType.Long;
             }
 

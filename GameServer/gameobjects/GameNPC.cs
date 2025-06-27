@@ -2758,14 +2758,6 @@ namespace DOL.GS
 			return Math.Max(1, weaponSkill * GetModified(eProperty.WeaponSkill) * 0.01);
 		}
 
-		public void SetLastMeleeAttackTick()
-		{
-			if (TargetObject?.Realm == 0 || Realm == 0)
-				m_lastAttackTickPvE = GameLoop.GameLoopTime;
-			else
-				m_lastAttackTickPvP = GameLoop.GameLoopTime;
-		}
-
 		/// <summary>
 		/// Gets/sets the object health
 		/// </summary>
