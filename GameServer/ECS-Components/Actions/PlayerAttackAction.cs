@@ -93,8 +93,8 @@ namespace DOL.GS
 
             if (stopAttack)
             {
+                _playerOwner.rangeAttackComponent.RangedAttackState = eRangedAttackState.None;
                 AttackComponent.StopAttack();
-                CleanUp();
                 return false;
             }
 
