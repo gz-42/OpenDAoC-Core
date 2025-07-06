@@ -774,10 +774,10 @@ namespace DOL.GS
 		/// <summary>
 		/// Check if we can make a proc on a weapon go off.  Weapon Procs
 		/// </summary>
-		/// <param name="ad"></param>
-		/// <param name="weapon"></param>
-		public virtual void CheckWeaponMagicalEffect(AttackData ad, DbInventoryItem weapon)
+		public virtual void CheckWeaponMagicalEffect(AttackData ad)
 		{
+			DbInventoryItem weapon = ad.Weapon;
+
 			if (weapon == null || (ad.AttackResult != eAttackResult.HitStyle && ad.AttackResult != eAttackResult.HitUnstyled))
 				return;
 
@@ -885,6 +885,44 @@ namespace DOL.GS
 					}
 				}
 			}
+		}
+
+		public virtual void OnArmorHit(AttackData ad, DbInventoryItem armor)
+		{
+			if (ad == null || armor == null)
+				return;
+
+			(armor as GameInventoryItem)?.OnStruckByEnemy(this, ad.Attacker);
+			CheckArmorMagicalEffect(ad, armor);
+		}
+
+		protected virtual void CheckArmorMagicalEffect(AttackData ad, DbInventoryItem armor)
+		{
+			int requiredLevel = armor.Template.LevelRequirement > 0 ? armor.Template.LevelRequirement : Math.Min(50, armor.Level);
+
+			if (requiredLevel > Level)
+				return;
+
+			int chance = armor.ProcChance > 0 ? armor.ProcChance : 10;
+			SpellLine spellLine = SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects);
+
+			if (armor.ProcSpellID != 0 && Util.Chance(chance))
+				StartArmorMagicalEffect(armor, ad.Attacker, SkillBase.FindSpell(armor.ProcSpellID, spellLine), spellLine);
+
+			if (armor.ProcSpellID1 != 0 && Util.Chance(chance))
+				StartArmorMagicalEffect(armor, ad.Attacker, SkillBase.FindSpell(armor.ProcSpellID1, spellLine), spellLine);
+		}
+
+		protected virtual void StartArmorMagicalEffect(DbInventoryItem armor, GameLiving attacker, Spell spell, SpellLine spellLine)
+		{
+			if (armor == null || attacker == null || spell == null)
+				return;
+
+			if (spellLine == null)
+				spellLine = SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects);
+
+			ISpellHandler spellHandler = ScriptMgr.CreateSpellHandler(this, spell, spellLine);
+			spellHandler?.StartSpell(attacker, armor);
 		}
 
 		/// <summary>
@@ -1443,15 +1481,6 @@ namespace DOL.GS
 						else
 							effect.RemainingValue = ablativeHp;
 					}
-				}
-
-				// Handle DefensiveProcs.
-				List<ECSGameSpellEffect> dProcEffects = effectListComponent.GetSpellEffects(eEffect.DefensiveProc);
-
-				if (ad.Target == this && dProcEffects != null && ad.AttackType != eAttackType.Spell)
-				{
-					for (int i = 0; i < dProcEffects.Count; i++)
-						(dProcEffects[i].SpellHandler as DefensiveProcSpellHandler).EventHandler(ad);
 				}
 			}
 			else if (ad.IsSpellResisted && ad.Target is GameNPC npc)
