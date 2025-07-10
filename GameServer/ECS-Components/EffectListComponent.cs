@@ -21,6 +21,7 @@ namespace DOL.GS
         // Pending effects.
         private ConcurrentQueue<ECSGameEffect> _pendingEffects = new();     // Queue for pending effects to be processed in the next tick.
         private int _pendingEffectCount;                                    // Number of pending effects to be processed.
+        private HashSet<eEffect> _effectTypesToRemove = new();              // Set of effect types to be removed from the effects dictionary.
 
         // Concentration.
         private List<ECSGameSpellEffect> _concentrationEffects = new(20);   // List of concentration effects currently active on the player.
@@ -61,8 +62,18 @@ namespace DOL.GS
                 {
                     List<ECSGameEffect> list = pair.Value;
 
+                    // Reverse loop to allow removing effects in `TickEffect` while iterating.
+                    // To remove from `_effects`, we use `_effectTypesToRemove` as an intermediate list.
                     for (int i = list.Count - 1; i >= 0; i--)
                         TickEffect(list[i]);
+                }
+
+                if (_effectTypesToRemove.Count > 0)
+                {
+                    foreach (eEffect effectType in _effectTypesToRemove)
+                        _effects.Remove(effectType);
+
+                    _effectTypesToRemove.Clear();
                 }
             }
 
@@ -479,7 +490,7 @@ namespace DOL.GS
             {
                 try
                 {
-                    // Dead owners don't get effects
+                    // Dead owners don't get effects.
                     if (!Owner.IsAlive)
                         return AddEffectResult.Failed;
 
@@ -539,32 +550,11 @@ namespace DOL.GS
                                             // This is ugly, but we really want to stop the effect first and there isn't really any elegant way to do it.
                                             // The call to stop updates the effect's internal state and should add it to the queue.
                                             // Abort the process if anything doesn't work as expected.
-                                            if (existingEffect.Stop())
-                                            {
-                                                if (_pendingEffects.TryDequeue(out ECSGameEffect pendingEffect))
-                                                {
-                                                    if (pendingEffect != existingEffect)
-                                                    {
-                                                        _pendingEffects.Enqueue(pendingEffect);
-                                                        // Log error.
-                                                        return AddEffectResult.Failed;
-                                                    }
-
-                                                    existingEffect.IsSilent = true;
-                                                    TickPendingEffect(pendingEffect);
-                                                }
-                                                else
-                                                {
-                                                    // log error
-                                                    return AddEffectResult.Failed;
-                                                }
-                                            }
-                                            else
-                                            {
-                                                // log error
+                                            if (!existingEffect.Stop(false, false) || !existingEffect.IsStopping)
                                                 return AddEffectResult.Failed;
-                                            }
 
+                                            existingEffect.IsSilent = true;
+                                            TickPendingEffect(existingEffect);
                                             effect.IsSilent = true;
                                             existingGameEffects.Add(effect);
                                             result = AddEffectResult.Added;
@@ -739,6 +729,7 @@ namespace DOL.GS
             {
                 try
                 {
+                    _effectTypesToRemove.Remove(effect.EffectType); // In case the type was added by another effect being processed during the same tick.
                     RequestPlayerUpdate(EffectService.GetPlayerUpdateFromEffect(effect.EffectType));
 
                     if (effect is ECSGameSpellEffect spellEffect)
@@ -830,7 +821,7 @@ namespace DOL.GS
                         _effectIdToEffect.Remove(effect.Icon);
 
                         if (existingEffects.Count == 0)
-                            _effects.Remove(effect.EffectType);
+                            _effectTypesToRemove.Add(effect.EffectType);
 
                         HandleConcentration(effect as ECSGameSpellEffect);
                         return RemoveEffectResult.Removed;

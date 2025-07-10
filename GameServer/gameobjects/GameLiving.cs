@@ -956,7 +956,7 @@ namespace DOL.GS
 			}
 		}
 
-		public virtual double TryEvade(AttackData ad, AttackData lastAD, int attackerCount)
+		public virtual double TryEvade(AttackData ad, AttackData lastAD)
 		{
 			// 1. A: It isn't possible to give a simple answer. The formula includes such elements
 			// as your level, your target's level, your level of evade, your QUI, your DEX, your
@@ -990,9 +990,6 @@ namespace DOL.GS
 			{
 				evadeChance *= 0.001;
 
-				if (attackerCount > 1)
-					evadeChance -= (attackerCount - 1) * 0.03;
-
 				// Kelgor's Claw 15% evade.
 				if (lastAD != null && lastAD.Style != null && lastAD.Style.ID == 380)
 					evadeChance += 15 * 0.01;
@@ -1003,23 +1000,20 @@ namespace DOL.GS
 				if (ad.AttackType == eAttackType.Ranged)
 					evadeChance /= 5.0;
 
-				if (evadeChance > Properties.EVADE_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
-					evadeChance = Properties.EVADE_CAP; // 50% evade cap RvR only. http://www.camelotherald.com/more/664.shtml
-
-				if (evadeChance > 0.99)
-					evadeChance = 0.99;
-				
 				if (ad.AttackType is eAttackType.MeleeDualWield)
 					evadeChance *= ad.Attacker.DualWieldDefensePenetrationFactor;
-			}
 
-			// Infiltrator RR5.
-			if (player != null)
-			{
-				OverwhelmEffect Overwhelm = player.EffectList.GetOfType<OverwhelmEffect>();
+				// Infiltrator RR5.
+				if (player != null)
+				{
+					OverwhelmEffect Overwhelm = player.EffectList.GetOfType<OverwhelmEffect>();
 
-				if (Overwhelm != null)
-					evadeChance = Math.Max(evadeChance - OverwhelmAbility.BONUS, 0);
+					if (Overwhelm != null)
+						evadeChance = Math.Max(evadeChance - OverwhelmAbility.BONUS, 0);
+				}
+
+				if (evadeChance > Properties.EVADE_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
+					evadeChance = Properties.EVADE_CAP;
 			}
 
 			return evadeChance;
@@ -1085,8 +1079,9 @@ namespace DOL.GS
 				{
 					parryChance *= 0.001;
 
-					if (attackerCount > 0)
-						parryChance /= (attackerCount + 1) / 2.0;
+					// Parry chance is divided by the number of attackers.
+					// The penalty was reduced in 1.87.
+					parryChance /= attackerCount;
 
 					// Tribal Wrath 25% evade.
 					if (lastAD != null && lastAD.Style != null && lastAD.Style.ID == 381)
@@ -1095,24 +1090,21 @@ namespace DOL.GS
 					// Reduce chance by attacker's defense penetration.
 					parryChance *= 1 - ad.DefensePenetration;
 
+					if (ad.AttackType is eAttackType.MeleeTwoHand)
+						parryChance *= ad.Attacker.TwoHandedDefensePenetrationFactor;
+
+					// Infiltrator RR5.
+					if (player != null)
+					{
+						OverwhelmEffect Overwhelm = player.EffectList.GetOfType<OverwhelmEffect>();
+
+						if (Overwhelm != null)
+							parryChance = Math.Max(parryChance - OverwhelmAbility.BONUS, 0);
+					}
+
 					if (parryChance > Properties.PARRY_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
 						parryChance = Properties.PARRY_CAP;
-
-					if (parryChance > 0.99)
-						parryChance = 0.99;
 				}
-			}
-
-			if (ad.AttackType is eAttackType.MeleeTwoHand)
-				parryChance *= ad.Attacker.TwoHandedDefensePenetrationFactor;
-
-			// Infiltrator RR5.
-			if (player != null)
-			{
-				OverwhelmEffect Overwhelm = player.EffectList.GetOfType<OverwhelmEffect>();
-
-				if (Overwhelm != null)
-					parryChance = Math.Max(parryChance - OverwhelmAbility.BONUS, 0);
 			}
 
 			return parryChance;
@@ -1154,28 +1146,28 @@ namespace DOL.GS
 			GamePlayer player = this as GamePlayer;
 
 			if (IsObjectInFront(ad.Attacker, 120))
-			{
-				if (player != null)
-				{
-					if (player.HasAbility(Abilities.Shield) && leftHand != null && (player.ActiveWeapon == null || player.ActiveWeapon.Item_Type is Slot.RIGHTHAND || player.ActiveWeapon.Item_Type is Slot.LEFTHAND))
-						blockChance = GetModified(eProperty.BlockChance) * (leftHand.Quality * 0.01) * (leftHand.Condition / (double) leftHand.MaxCondition);
-				}
-				else
-					blockChance = GetModified(eProperty.BlockChance);
-			}
+				blockChance = CalculateBaseBlockChance(player, leftHand, ad);
 
 			if (blockChance > 0)
 			{
-				blockChance *= 0.001;
 				blockChance *= 1 - ad.DefensePenetration;
-
-				if (blockChance > Properties.BLOCK_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
-					blockChance = Properties.BLOCK_CAP;
 
 				shieldSize = 1;
 
 				if (leftHand != null)
 					shieldSize = Math.Max(leftHand.Type_Damage, 1);
+
+				if (ad.AttackType is eAttackType.MeleeDualWield)
+					blockChance *= ad.Attacker.DualWieldDefensePenetrationFactor;
+
+				// Infiltrator RR5.
+				if (player != null)
+				{
+					OverwhelmEffect Overwhelm = player.EffectList.GetOfType<OverwhelmEffect>();
+
+					if (Overwhelm != null)
+						blockChance = Math.Max(blockChance - OverwhelmAbility.BONUS, 0);
+				}
 
 				// This was added in 1.74, then superseded in 1.96 with a 60% cap.
 				// Leaving it here for reference.
@@ -1187,41 +1179,101 @@ namespace DOL.GS
 				else if (shieldSize == 3 && blockChance > 0.99)
 					blockChance = 0.99;*/
 
-				if (IsEngaging)
-				{
-					EngageECSGameEffect engage = (EngageECSGameEffect) EffectListService.GetEffectOnTarget(this, eEffect.Engage);
-
-					if (engage != null && attackComponent.AttackState && engage.EngageTarget == ad.Attacker)
-					{
-						if (engage.EngageTarget.LastAttackedByEnemyTick > GameLoop.GameLoopTime - EngageAbilityHandler.ENGAGE_ATTACK_DELAY_TICK)
-							player?.Out.SendMessage($"{engage.EngageTarget.GetName(0, true)} has been attacked recently and you are unable to engage.", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-						else if (Endurance < EngageAbilityHandler.ENGAGE_ENDURANCE_COST)
-							engage.Cancel(false, true);
-						else
-						{
-							Endurance -= EngageAbilityHandler.ENGAGE_ENDURANCE_COST;
-							player?.Out.SendMessage("You concentrate on blocking the blow!", eChatType.CT_Skill, eChatLoc.CL_SystemWindow);
-
-							if (blockChance < 0.95)
-								blockChance = 0.95;
-						}
-					}
-				}
-
-				if (ad.AttackType is eAttackType.MeleeDualWield)
-					blockChance *= ad.Attacker.DualWieldDefensePenetrationFactor;
-			}
-
-			// Infiltrator RR5.
-			if (player != null)
-			{
-				OverwhelmEffect Overwhelm = player.EffectList.GetOfType<OverwhelmEffect>();
-
-				if (Overwhelm != null)
-					blockChance = Math.Max(blockChance - OverwhelmAbility.BONUS, 0);
+				if (blockChance > Properties.BLOCK_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
+					blockChance = Properties.BLOCK_CAP;
 			}
 
 			return blockChance;
+		}
+
+		private static bool IsValidEngageState(EngageECSGameEffect engage, AttackComponent attackComponent, AttackData ad)
+		{
+			return engage != null && attackComponent.AttackState && engage.EngageTarget == ad.Attacker;
+		}
+
+		private static bool CanEngageTarget(EngageECSGameEffect engage, GamePlayer player)
+		{
+			if (engage.EngageTarget.LastAttackedByEnemyTick <= GameLoop.GameLoopTime - EngageAbilityHandler.ENGAGE_ATTACK_DELAY_TICK)
+				return true;
+
+			player?.Out.SendMessage($"{engage.EngageTarget.GetName(0, true)} has been attacked recently and you are unable to engage.", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+			return false;
+		}
+
+		private bool HasSufficientEndurance()
+		{
+			return Endurance >= EngageAbilityHandler.ENGAGE_ENDURANCE_COST;
+		}
+
+		private void ConsumeEngageEndurance(GamePlayer player)
+		{
+			Endurance -= EngageAbilityHandler.ENGAGE_ENDURANCE_COST;
+			player?.Out.SendMessage("You concentrate on blocking the blow!", eChatType.CT_Skill, eChatLoc.CL_SystemWindow);
+		}
+
+		private double CalculateBaseBlockChance(GamePlayer player, DbInventoryItem leftHand, AttackData ad)
+		{
+			// From Prima guide:
+			// "Your chance to block arrows from a same-level
+			// archer with your shield is 30%. This is modified
+			// by Shield spec, quality and condition of the
+			// shield, and the Engage skill."
+
+			// From 1.34 patch notes:
+			// The base chance to block a same-level archer is 30%, if your shield specialization is maxed for your level this can reach 60%.
+			// Quality and condition act as modifiers to this chance, if your skill-based chance was 50%,
+			// your Shield had a quality of 90% and a condition of 88%,then your actual chance to block would be 40%.
+
+			// From 1.34 patch notes:
+			// Using the Engage skill gives a base 95% chance to block arrows fired by your target.
+			// How many archers you can block attacks from is determined by the size of the shield, the same as Melee targets.
+			// You can Engage one archer and still get normal blocking chances against other archers you are facing, if you have a Medium or Large shield.
+			// Essentially, Engage works exactly the same against arrows as it does against melee attacks.
+
+			double baseBlockChance = 0.0;
+
+			if (player != null)
+			{
+				if (player.HasAbility(Abilities.Shield))
+				{
+					bool hasValidWeaponSetup = leftHand != null && (player.ActiveWeapon == null || player.ActiveWeapon.Item_Type is Slot.RIGHTHAND || player.ActiveWeapon.Item_Type is Slot.LEFTHAND);
+
+					if (hasValidWeaponSetup)
+					{
+						baseBlockChance = GetModified(eProperty.BlockChance);
+						baseBlockChance *= leftHand.Quality * 0.01 * (leftHand.Condition / (double) leftHand.MaxCondition);
+					}
+				}
+			}
+			else
+				baseBlockChance = GetModified(eProperty.BlockChance);
+
+			baseBlockChance /= 1000; // Not a typo.
+
+			// Increase block chance by 25% if the attack is ranged, which simulates a base of 30%.
+			if (ad.AttackType is eAttackType.Ranged)
+				baseBlockChance += 0.25;
+
+			// Engage mechanics are not fully known, but traditionally people would sometimes put only a few points in Shield to get it, hinting that it provided a good block chance even at low spec.
+			if (IsEngaging)
+			{
+				EngageECSGameEffect engage = EffectListService.GetEffectOnTarget(this, eEffect.Engage) as EngageECSGameEffect;
+
+				if (IsValidEngageState(engage, attackComponent, ad) && CanEngageTarget(engage, player))
+				{
+					if (!HasSufficientEndurance())
+						engage.Cancel(false, true);
+					else
+					{
+						// This is a guess, and is based on the patch notes stating that the base block chance against arrows is 30% (so +25% from the normal base), and is 95% with engage.
+						// 65% is the difference between both, and gives a base block chance of 70% against melee attacks, before spec and stats.
+						baseBlockChance += 0.65;
+						ConsumeEngageEndurance(player);
+					}
+				}
+			}
+
+			return baseBlockChance;
 		}
 
 		/// <summary>
@@ -1424,7 +1476,7 @@ namespace DOL.GS
 				if (this is GameNPC gameNpc && ActiveWeaponSlot is eActiveWeaponSlot.Distance && IsWithinRadius(ad.Attacker, 150))
 					gameNpc.StartAttackWithMeleeWeapon(ad.Attacker);
 
-				attackComponent.AddAttacker(ad.Attacker, ad.Interval);
+				attackComponent.AddAttacker(ad);
 
 				if (ad.SpellHandler == null || (ad.SpellHandler != null && ad.SpellHandler is not DoTSpellHandler))
 				{
@@ -1686,7 +1738,7 @@ namespace DOL.GS
 			{
 				EnemyHealedEventArgs args = new(this, changeSource, healthChangeType, healthChanged);
 
-				foreach (GameLiving attacker in attackComponent.Attackers.Keys)
+				foreach (GameLiving attacker in attackComponent.AttackerTracker.Attackers)
 				{
 					if (attacker is not GameLiving attackerLiving)
 						continue;
@@ -1754,13 +1806,9 @@ namespace DOL.GS
 			try
 			{
 				attackComponent.StopAttack();
-
-				if (killer is GameLiving livingKiller)
-					attackComponent.Attackers.TryAdd(livingKiller, long.MaxValue);
-
 				List<GamePlayer> playerAttackers = new();
 
-				foreach (GameObject attacker in attackComponent.Attackers.Keys)
+				foreach (GameObject attacker in attackComponent.AttackerTracker.Attackers)
 				{
 					if (attacker is not GameLiving livingAttacker)
 						continue;
@@ -1774,7 +1822,7 @@ namespace DOL.GS
 
 						if (player != null)
 						{
-							if (!attackComponent.Attackers.ContainsKey(player))
+							if (!attackComponent.AttackerTracker.ContainsAttacker(player))
 							{
 								if (!playerAttackers.Contains(player))
 									playerAttackers.Add(player);
@@ -1809,7 +1857,7 @@ namespace DOL.GS
 				foreach (Quests.DataQuest q in DataQuestList)
 					q.Notify(GameLivingEvent.Dying, this, new DyingEventArgs(killer, playerAttackers));
 
-				attackComponent.Attackers.Clear();
+				attackComponent.AttackerTracker.Clear();
 
 				// clear all of our targets
 				rangeAttackComponent.AutoFireTarget = null;
@@ -3420,7 +3468,7 @@ namespace DOL.GS
 
 			attackComponent.StopAttack();
 
-			foreach (GameObject attacker in attackComponent.Attackers.Keys)
+			foreach (GameObject attacker in attackComponent.AttackerTracker.Attackers)
 			{
 				if (attacker is not GameLiving attackerLiving)
 					continue;
@@ -3428,7 +3476,7 @@ namespace DOL.GS
 				attackerLiving.EnemyKilled(this);
 			}
 
-			attackComponent.Attackers.Clear();
+			attackComponent.AttackerTracker.Clear();
 			StopHealthRegeneration();
 			StopPowerRegeneration();
 			StopEnduranceRegeneration();
