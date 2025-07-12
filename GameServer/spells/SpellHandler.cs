@@ -388,7 +388,14 @@ namespace DOL.GS.Spells
 				return false;
 			}
 
-			Target = selectedTarget;
+			GamePlayer playerCaster = m_caster as GamePlayer;
+
+			// Even with the spell queue disabled, spells are allowed to be queued silently to help counteract the client's anti spam feature.
+			// But this means we should use the most up-to-date target, as no actual queuing behavior is expected.
+			if (playerCaster != null && !playerCaster.SpellQueue)
+				Target = playerCaster.TargetObject as GameLiving;
+			else
+				Target = selectedTarget;
 
 			switch (Spell.Target)
 			{
@@ -424,6 +431,7 @@ namespace DOL.GS.Spells
 			}
 
 			// Initial LoS state.
+			// Note: This may be wrong for players. This is the LoS state for the currently selected target, not necessarily for the one the spell will be casted on.
 			HasLos = Caster.TargetInView;
 
 			if (Caster is GameNPC npcOwner)
@@ -461,8 +469,6 @@ namespace DOL.GS.Spells
 
 			if (IsQuickCasting)
 				_quickcast.ExpireTick = GameLoop.GameLoopTime + _quickcast.Duration;
-
-			GamePlayer playerCaster = m_caster as GamePlayer;
 
 			if (playerCaster != null)
 			{
@@ -1016,6 +1022,11 @@ namespace DOL.GS.Spells
 			}
 
 			return true;
+		}
+
+		public bool IsCastEndingSoon(int millisecondsBeforeEnd)
+		{
+			return ServiceUtils.ShouldTick(_castEndTick - millisecondsBeforeEnd);
 		}
 
 		#endregion
