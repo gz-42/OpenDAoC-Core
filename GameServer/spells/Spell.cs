@@ -516,43 +516,44 @@ namespace DOL.GS
 
 		#region Spell Helpers
 
-		public bool IsPoison
-		{
-			get
-			{
-				switch (ID)
-				{
-					case 30000:
-					case 30004:
-					case 30009:
-					case 30014:
-					case 30019:
-					case 30024:
-					case 30029:
-					case 30034:
-					case 30039:
-					case 30044:
-					case 30049:
-						return true;
-					default:
-						return false;
-				}
-			}
-		}
-		
+		public bool IsSnare => SpellType is
+			eSpellType.SpeedDecrease or
+			eSpellType.StyleSpeedDecrease or
+			eSpellType.UnbreakableSpeedDecrease or
+			eSpellType.DamageSpeedDecrease or
+			eSpellType.HereticSpeedDecrease or
+			eSpellType.DamageSpeedDecreaseNoVariance or
+			eSpellType.HereticDamageSpeedDecrease or
+			eSpellType.VampSpeedDecrease or
+			eSpellType.WarlockSpeedDecrease;
+
+		// Probably inaccurate.
+		// `IsFocus` includes Bonedancer focus snare.
+		// `IsPoison` should already be handled by `eSpellType.UnbreakableSpeedDecrease`, but just in case.
+		// DD + Snare and style snares have a different `SpellType` and don't trigger an immunity.
+		public bool IsTriggeringImmunitySnare =>
+			(SpellType is eSpellType.SpeedDecrease or eSpellType.UnbreakableSpeedDecrease) &&
+			!IsFocus &&
+			!IsPoisonEffect &&
+			!Name.Equals("Prevent Flight", StringComparison.OrdinalIgnoreCase);
+
 		public bool IsPoisonEffect
 		{
 			get
 			{
 				switch (ID)
 				{
+					case 8096: // Weak Essence of Weariness
+					case 8097: // Essence of Weariness
+					case 8100: // Weak Essence of Lethargy
+					case 8101: // Essence of Lethargy
 					case 30000: // Minor Lethal Poison
 					case 30001: // Minor Weakening Poison
 					case 30002: // Minor Imbalancing Poison
 					case 30003: // Minor Infectious Serum
 					case 30004: // Lesser Lethal Poison
 					case 30005: // Lesser Weakening Poison
-					// case 30006: // Lethal Strike
+					case 30006: // Lethal Strike
 					case 30007: // Lesser Imbalancing Poison
 					case 30008: // Lethal Poison
 					case 30009: // Major Weakening Poison
@@ -579,14 +580,10 @@ namespace DOL.GS
 					case 30046: // Greater Enervating Poison
 					case 30047: // Greater Infectious Serum
 					case 30049: // Lifebane
-					case 30050: // Weak Essence of Lethargy
-					case 30051: // Essence of Lethargy
-					case 30052: // Weak Essence of Weariness
-					case 30053: // Essence of Weariness
-					case 300211: // Greater Enervating Poison
-					case 300281: // Major Enervating Poison
-					case 300411: // Lesser Enervating Poison
-					case 300461: // Minor Enervating Poison
+					case 300211: // Minor Enervating Poison
+					case 300281: // Lesser Enervating Poison
+					case 300311: // Major Enervating Poison
+					case 300461: // Greater Enervating Poison
 						return true;
 					default:
 						return false;
