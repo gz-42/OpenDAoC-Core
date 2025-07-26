@@ -53,8 +53,8 @@ namespace DOL.GS.PacketHandler.Client.v168
 		/// </summary>
 		private static readonly Logging.Logger Log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-		private static DateTime m_lastAccountCreateTime;
-		private readonly Dictionary<string, LockCount> m_locks = new Dictionary<string, LockCount>();
+		private static DateTime _lastAccountCreateTime;
+		private static Lock _accountCreateLock = new();
 		private static HttpClient _httpClient = new HttpClient();
 
 		public void HandlePacket(GameClient client, GSPacketIn packet)
@@ -195,9 +195,6 @@ namespace DOL.GS.PacketHandler.Client.v168
 					Log.Error("Error shutting down Client after IsAllowedToConnect failed!", e);
 			}
 
-			// Handle connection.
-			EnterLock(userName);
-
 			try
 			{
 				DbAccount playerAccount;
@@ -274,11 +271,8 @@ namespace DOL.GS.PacketHandler.Client.v168
 
 						if (playerAccount == null)
 						{
-							//check autocreate ...
-
 							if (GameServer.Instance.Configuration.AutoAccountCreation && Properties.ALLOW_AUTO_ACCOUNT_CREATION)
 							{
-								// autocreate account
 								if (string.IsNullOrEmpty(password))
 								{
 									client.Out.SendLoginDenied(eLoginError.AccountInvalid);
@@ -290,51 +284,58 @@ namespace DOL.GS.PacketHandler.Client.v168
 									return;
 								}
 
-								// check for account bombing
-								TimeSpan ts;
-								var allAccByIp = DOLDB<DbAccount>.SelectObjects(DB.Column("LastLoginIP").IsEqualTo(ipAddress));
-								int totalacc = 0;
-								foreach (DbAccount ac in allAccByIp)
+								// Try to prevent account creation bombing.
+								// This should eventually be made async.
+								lock (_accountCreateLock)
 								{
-									ts = DateTime.Now - ac.CreationDate;
-									if (ts.TotalMinutes < Properties.TIME_BETWEEN_ACCOUNT_CREATION_SAMEIP && totalacc > 1)
+									TimeSpan timeSpan;
+									int totalAccount = 0;
+									var accountsFromSameIp = DOLDB<DbAccount>.SelectObjects(DB.Column("LastLoginIP").IsEqualTo(ipAddress));
+
+									foreach (DbAccount ac in accountsFromSameIp)
+									{
+										timeSpan = DateTime.Now - ac.CreationDate;
+
+										if (timeSpan.TotalMinutes < Properties.TIME_BETWEEN_ACCOUNT_CREATION_SAMEIP)
+										{
+											if (Log.IsWarnEnabled)
+												Log.Warn($"Account creation: too many from same IP within set minutes - {userName}:{ipAddress}");
+
+											client.Out.SendLoginDenied(eLoginError.PersonalAccountIsOutOfTime);
+											client.IsConnected = false;
+											return;
+										}
+
+										totalAccount++;
+									}
+
+									if (totalAccount >= Properties.TOTAL_ACCOUNTS_ALLOWED_SAMEIP)
 									{
 										if (Log.IsWarnEnabled)
-											Log.Warn("Account creation: too many from same IP within set minutes - " + userName + " : " + ipAddress);
+											Log.Warn($"Account creation: too many accounts created from same ip - {userName}:{ipAddress}");
 
-										client.Out.SendLoginDenied(eLoginError.PersonalAccountIsOutOfTime);
+										client.Out.SendLoginDenied(eLoginError.AccountNoAccessThisGame);
 										client.IsConnected = false;
 										return;
 									}
 
-									totalacc++;
-								}
-								if (totalacc >= Properties.TOTAL_ACCOUNTS_ALLOWED_SAMEIP)
-								{
-									if (Log.IsWarnEnabled)
-										Log.Warn("Account creation: too many accounts created from same ip - " + userName + " : " + ipAddress);
-
-									client.Out.SendLoginDenied(eLoginError.AccountNoAccessThisGame);
-									client.IsConnected = false;
-									return;
-								}
-
-								// per timeslice - for preventing account bombing via different ip
-								if (Properties.TIME_BETWEEN_ACCOUNT_CREATION > 0)
-								{
-									ts = DateTime.Now - m_lastAccountCreateTime;
-									if (ts.TotalMinutes < Properties.TIME_BETWEEN_ACCOUNT_CREATION)
+									if (Properties.TIME_BETWEEN_ACCOUNT_CREATION > 0)
 									{
-										if (Log.IsWarnEnabled)
-											Log.Warn("Account creation: time between account creation too small - " + userName + " : " + ipAddress);
+										timeSpan = DateTime.Now - _lastAccountCreateTime;
 
-										client.Out.SendLoginDenied(eLoginError.PersonalAccountIsOutOfTime);
-										client.IsConnected = false;
-										return;
+										if (timeSpan.TotalMinutes < Properties.TIME_BETWEEN_ACCOUNT_CREATION)
+										{
+											if (Log.IsWarnEnabled)
+												Log.Warn($"Account creation: time between account creation too small - {userName}:{ipAddress}");
+
+											client.Out.SendLoginDenied(eLoginError.PersonalAccountIsOutOfTime);
+											client.IsConnected = false;
+											return;
+										}
 									}
-								}
 
-								m_lastAccountCreateTime = DateTime.Now;
+									_lastAccountCreateTime = DateTime.Now;
+								}
 
 								playerAccount = new DbAccount();
 								playerAccount.Name = userName;
@@ -440,7 +441,6 @@ namespace DOL.GS.PacketHandler.Client.v168
 
 					client.Out.SendLoginGranted();
 					client.ClientState = GameClient.eClientState.Connecting;
-					GameServer.Database.FillObjectRelations(client.Account);
 
 					// var clIP = ((IPEndPoint) client.Socket.RemoteEndPoint)?.Address.ToString();
 					// var sharedClients = WorldMgr.GetClientsFromIP(clIP);
@@ -480,8 +480,6 @@ namespace DOL.GS.PacketHandler.Client.v168
 
 				if (client.IsConnected == false)
 					client.Disconnect();
-
-				ExitLock(userName);
 			}
 		}
 
@@ -505,83 +503,5 @@ namespace DOL.GS.PacketHandler.Client.v168
 
 			return stringBuilder.ToString();
 		}
-
-		/// <summary>
-		/// Acquires the lock on account.
-		/// </summary>
-		/// <param name="accountName">Name of the account.</param>
-		private void EnterLock(string accountName)
-		{
-			LockCount lockObj = null;
-			lock (m_locks)
-			{
-				// Get/create lock object
-				if (!m_locks.TryGetValue(accountName, out lockObj))
-				{
-					lockObj = new LockCount();
-					m_locks.Add(accountName, lockObj);
-				}
-
-				if (lockObj == null)
-				{
-					if (Log.IsErrorEnabled)
-						Log.Error("(Enter) No lock object for account: '" + accountName + "'");
-				}
-				else
-				{
-					// Increase count of locks
-					lockObj.count++;
-				}
-			}
-
-			if (lockObj != null)
-			{
-				Monitor.Enter(lockObj);
-			}
-		}
-
-		/// <summary>
-		/// Releases the lock on account.
-		/// </summary>
-		/// <param name="accountName">Name of the account.</param>
-		private void ExitLock(string accountName)
-		{
-			LockCount lockObj = null;
-			lock (m_locks)
-			{
-				// Get lock object
-				if (!m_locks.TryGetValue(accountName, out lockObj))
-				{
-					if (Log.IsErrorEnabled)
-						Log.Error("(Exit) No lock object for account: '" + accountName + "'");
-				}
-
-				// Remove lock object if no more locks on it
-				if (lockObj != null)
-				{
-					if (--lockObj.count <= 0)
-					{
-						m_locks.Remove(accountName);
-					}
-				}
-			}
-
-			Monitor.Exit(lockObj);
-		}
-
-		#region Nested type: LockCount
-
-		/// <summary>
-		/// This class is used as lock object. Contains the count of locks held.
-		/// </summary>
-		private class LockCount
-		{
-			/// <summary>
-			/// Count of locks held.
-			/// </summary>
-			public int count;
-		}
-
-		#endregion
 	}
 }

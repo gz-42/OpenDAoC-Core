@@ -153,7 +153,7 @@ namespace DOL.GS
 
         public override int TargetInViewAlwaysTrueMinRange => (TargetObject is GamePlayer targetPlayer && targetPlayer.IsMoving) ? 100 : 64;
 
-        public PlayerDeck RandomNumberDeck { get; set; }
+        public RandomDeck RandomDeck { get; set; }
 
         /// <summary>
         /// Holds the ground target visibility flag
@@ -2578,7 +2578,7 @@ namespace DOL.GS
                 base.Health = value;
 
                 if (DBCharacter != null)
-                    DBCharacter.Health = base.Health;
+                    DBCharacter.Health = base.Health; // Base clamps between 0 and max value.
 
                 if (oldPercent != HealthPercent)
                 {
@@ -2660,7 +2660,7 @@ namespace DOL.GS
                 base.Mana = value;
 
                 if (DBCharacter != null)
-                    DBCharacter.Mana = value;
+                    DBCharacter.Mana = base.Mana; // Base clamps between 0 and max value.
 
                 if (oldPercent != ManaPercent)
                 {
@@ -2681,7 +2681,7 @@ namespace DOL.GS
                 base.Endurance = value;
 
                 if (DBCharacter != null)
-                    DBCharacter.Endurance = value;
+                    DBCharacter.Endurance = base.Endurance; // Base clamps between 0 and max value.
 
                 if (oldPercent != EndurancePercent)
                 {
@@ -5956,16 +5956,16 @@ namespace DOL.GS
 
             int armorFactorCap = characterLevel * 2;
             double armorFactor = Math.Min(item.DPS_AF, (eObjectType) item.Object_Type is eObjectType.Cloth ? characterLevel : armorFactorCap);
-            armorFactor += BaseBuffBonusCategory[eProperty.ArmorFactor] / 6.0; // Base AF buff.
+            armorFactor += BaseBuffBonusCategory[eProperty.ArmorFactor] / 6.0; // Base AF buffs need to be applied manually for players.
             armorFactor *= item.Quality * 0.01 * item.Condition / item.MaxCondition; // Apply condition and quality before the second cap. Maybe incorrect, but it makes base AF buffs a little more useful.
             armorFactor = Math.Min(armorFactor, armorFactorCap);
-            armorFactor += base.GetArmorAF(slot);
+            armorFactor += GetModified(eProperty.ArmorFactor) / 6.0; // Don't call base here.
 
             /*GameSpellEffect effect = SpellHandler.FindEffectOnTarget(this, typeof(VampiirArmorDebuff));
             if (effect != null && slot == (effect.SpellHandler as VampiirArmorDebuff).Slot)
                 armorFactor -= (int) (effect.SpellHandler as VampiirArmorDebuff).Spell.Value;*/
 
-            return armorFactor;
+            return Math.Max(0, armorFactor);
         }
 
         /// <summary>
@@ -10416,7 +10416,7 @@ namespace DOL.GS
             m_previousLoginDate = DBCharacter.LastPlayed;
             DBCharacter.LastPlayed = DateTime.Now; // Has to be updated on load to ensure time offline isn't added to character /played.
             IsMuted = Client.Account.IsMuted; // Account mutes are persistent.
-            RandomNumberDeck = new PlayerDeck(this); // Not async yet, needs to be updated.
+            RandomDeck = new RandomDeck(this); // Not async yet, needs to be updated.
 
             // Prepare the tasks.
             var moneyForRealmTask = DOLDB<DbAccountXMoney>.SelectObjectAsync(DB.Column("AccountID").IsEqualTo(Client.Account.ObjectId).And(DB.Column("Realm").IsEqualTo(Realm)));
@@ -10961,7 +10961,7 @@ namespace DOL.GS
         {
             try
             {
-                RandomNumberDeck.SaveDeck();
+                RandomDeck.SaveDeck();
 
                 DbAccountXMoney MoneyForRealm = DOLDB<DbAccountXMoney>.SelectObject(DB.Column("AccountID").IsEqualTo(this.Client.Account.ObjectId).And(DB.Column("Realm").IsEqualTo(this.Realm)));
 
