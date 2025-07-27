@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -6626,6 +6627,8 @@ namespace DOL.GS
         #region Vault/Money/Items/Trading/UseSlot/ApplyPoison
 
         private IGameInventoryObject m_activeInventoryObject;
+
+        public AccountVault AccountVault { get; private set; }
 
         /// <summary>
         /// The currently active InventoryObject
@@ -13915,6 +13918,7 @@ namespace DOL.GS
             m_lastUniqueLocations = new GameLocation[4];
 
             CreateInventory();
+            AccountVault = new(this, 0, AccountVaultKeeper.GetDummyVaultItem(this));
 
             m_characterClass = new DefaultCharacterClass();
             m_groupIndex = 0xFF;
