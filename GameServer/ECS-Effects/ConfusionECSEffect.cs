@@ -9,8 +9,9 @@ namespace DOL.GS
     {
         public ConfusionECSGameEffect(in ECSGameEffectInitParams initParams) : base(initParams)
         {
-            NextTick = 1;
+            // Confusion spells don't have a frequency set in the database.
             PulseFreq = 6000;
+            NextTick = GameLoop.GameLoopTime;
         }
 
         public override void OnStartEffect()
@@ -77,20 +78,19 @@ namespace DOL.GS
 
             foreach (GamePlayer target in npc.GetPlayersInRadius(750))
             {
-                if (doAttackFriend)
-                    targetList.Add(target);
-                else if (GameServer.ServerRules.IsAllowedToAttack(npc, target, true))
+                if (!GameServer.ServerRules.IsAllowedToAttack(npc, target, true))
+                    continue;
+
+                if (doAttackFriend || target.Realm != npc.Realm)
                     targetList.Add(target);
             }
 
             foreach (GameNPC target in npc.GetNPCsInRadius(750))
             {
-                if (target == npc)
+                if (!GameServer.ServerRules.IsAllowedToAttack(npc, target, true))
                     continue;
 
-                if (doAttackFriend)
-                    targetList.Add(target);
-                else if (GameServer.ServerRules.IsAllowedToAttack(npc, target, true))
+                if (doAttackFriend || target.Realm != npc.Realm)
                     targetList.Add(target);
             }
 

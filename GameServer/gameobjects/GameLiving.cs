@@ -1842,10 +1842,7 @@ namespace DOL.GS
 		{
 			lock (XpGainersLock)
 			{
-				if (m_xpGainers.TryGetValue(xpGainer, out double value))
-					m_xpGainers[xpGainer] = value + damageAmount;
-				else
-					m_xpGainers[xpGainer] = damageAmount;
+				m_xpGainers[xpGainer] = m_xpGainers.TryGetValue(xpGainer, out double value) ? value + damageAmount : damageAmount;
 			}
 		}
 
@@ -1867,6 +1864,10 @@ namespace DOL.GS
 			lock (_changeHealthLock)
 			{
 				int oldHealth = Health;
+
+				if (oldHealth <= 0)
+					return 0;
+
 				Health += changeAmount;
 				int healthChanged = Health - oldHealth;
 

@@ -16,15 +16,15 @@ namespace DOL.GS.Spells
 
         public override void OnDirectEffect(GameLiving target)
         {
-            if (target == null || !target.IsAlive || target.ObjectState is GameObject.eObjectState.Active)
+            if (target == null || !target.IsAlive || target.ObjectState is not GameObject.eObjectState.Active)
                 return;
 
             SendEffectAnimation(target, 0, false, 1);
             AttackData ad = CalculateDamageToTarget(target);
             DamageTarget(ad, false);
 
-            // Interrupt only if target is actually casting.
-            if (target.IsCasting && Spell.Target is not eSpellTarget.CONE)
+            // No idea what spells the cone exclusion affects.
+            if (Spell.Target is not eSpellTarget.CONE)
                 target.StartInterruptTimer(target.SpellInterruptDuration, ad.AttackType, Caster);
         }
 
@@ -32,8 +32,8 @@ namespace DOL.GS.Spells
         {
             base.OnSpellNegated(target, reason);
 
-            // Interrupt only if target is actually casting.
-            if (target.IsCasting && Spell.Target is not eSpellTarget.CONE)
+            // No idea what spells the cone exclusion affects.
+            if (Spell.Target is not eSpellTarget.CONE)
                 target.StartInterruptTimer(target.SpellInterruptDuration, AttackData.eAttackType.Spell, Caster);
         }
 
