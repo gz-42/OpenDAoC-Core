@@ -9,7 +9,6 @@ using DOL.Database;
 using DOL.GS.Effects;
 using DOL.GS.Housing;
 using DOL.GS.Keeps;
-using DOL.GS.PacketHandler.Client.v168;
 using DOL.GS.PlayerTitles;
 using DOL.GS.Quests;
 using DOL.GS.RealmAbilities;
@@ -800,12 +799,24 @@ namespace DOL.GS.PacketHandler
 					}
 				}
 
+				// `targetOID` does three things:
+				// * Enables the NPC's attack state if > 0.
+				// * Client side, forces the NPC to face the object having this ID at all time, and walk towards if it has any speed (incompatible with pathing).
+				// * Prevents the NPC from overshooting the target, which for some reason seems to prevent smooth movement when the target is close (very janky).
+				// So if we simply pass the target's ID, things won't look good.
+				// We want to enable the attack state even if pathing is enabled and the npc is far away, and we want to have smooth movements at close range.
+				// We obviously also want the NPC to face it's target at all time, if possible.
+				// To achieve this, we pass the real object ID if the NPC isn't moving and is close enough to attack, otherwise we pass an unused object ID.
+				// 65535 should be safe, since regions can't hold that many objects by default.
+				// Note that this can make very fast moving NPCs overshoot their target.
 				if (npc.IsAttacking && !npc.IsTurningDisabled)
 				{
 					GameObject target = npc.TargetObject;
 
-					if (target?.ObjectState == GameObject.eObjectState.Active && npc.IsWithinRadius(target, npc.attackComponent.AttackRange))
-						targetOID = (ushort) target.ObjectID;
+					if (target?.ObjectState is GameObject.eObjectState.Active && npc.CurrentSpeed == 0 && npc.IsWithinRadius(target, npc.attackComponent.AttackRange))
+						targetOID = target.ObjectID;
+					else
+						targetOID = 65535;
 				}
 			}
 
@@ -1509,41 +1520,8 @@ namespace DOL.GS.PacketHandler
 
 			ushort sourceObjectId = (ushort) source.ObjectID;
 			ushort targetObjectId = (ushort) target.ObjectID;
-			HandleCallback(m_gameClient, sourceObjectId, targetObjectId, callback);
-
-			using (var pak = GSTCPPacketOut.GetForTick(p => p.Init(GetPacketCode(eServerPackets.CheckLOSRequest))))
-			{
-				pak.WriteShort(sourceObjectId);
-				pak.WriteShort(targetObjectId);
-				pak.WriteShort(0x00); // ?
-				pak.WriteShort(0x00); // ?
-				SendTCP(pak);
-			}
-
+			m_gameClient.Player.LosCheckHandler.StartLosCheck(sourceObjectId, targetObjectId, callback);
 			return true;
-
-			static void HandleCallback(GameClient client, ushort sourceObjectId, ushort targetObjectId, CheckLosResponse callback)
-			{
-				CheckLosResponseHandler.TimeoutTimer timer;
-
-				// If there's already a timer running, don't send a new packet. Instead, try to add the callback to its list.
-				// Loop until we can do something with this callback. `TryAddCallback` may return false if the timer was being processed.
-				do
-				{
-					timer = client.Player.LosCheckTimers.GetOrAdd((sourceObjectId, targetObjectId), CreateTimer, (client.Player, callback));
-
-					if (!timer.IsAlive)
-					{
-						timer.Start();
-						return; // Don't add the callback here. It's already done in the timer's constructor.
-					}
-				} while (!timer.TryAddCallback(callback));
-
-				static CheckLosResponseHandler.TimeoutTimer CreateTimer((ushort sourceObjectId, ushort targetObjectId) key, (GamePlayer player, CheckLosResponse callback) args)
-				{
-					return new(args.player, args.callback, key.sourceObjectId, key.targetObjectId);
-				}
-			}
 		}
 
 		public virtual void SendQuestListUpdate()
