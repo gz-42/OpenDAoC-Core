@@ -420,24 +420,30 @@ namespace DOL.GS
 
             if (speed <= 0)
             {
-                UpdateMovement(0);
+                if (CurrentSpeed > 0)
+                    UpdateMovement(0);
+
                 return;
             }
 
             float distanceToTarget = Owner.GetDistanceTo(destination);
             int ticksToArrive = (int) (distanceToTarget * 1000 / speed);
 
-            if (ticksToArrive > 0)
+            if (ticksToArrive <= 0)
             {
-                if (distanceToTarget > 25)
-                    TurnTo((int) destination.X, (int) destination.Y);
+                if (CurrentSpeed > 0)
+                    UpdateMovement(0);
 
-                UpdateMovement(destination, distanceToTarget, speed);
-                SetFlag(MovementState.WALK_TO);
-                _walkingToEstimatedArrivalTime = GameLoop.GameLoopTime + ticksToArrive;
+                return;
             }
-            else
-                UpdateMovement(0);
+
+            if (distanceToTarget > 25)
+                TurnTo((int) destination.X, (int) destination.Y);
+
+            // Assume either the destination or speed has changed.
+            UpdateMovement(destination, distanceToTarget, speed);
+            SetFlag(MovementState.WALK_TO);
+            _walkingToEstimatedArrivalTime = GameLoop.GameLoopTime + ticksToArrive;
         }
 
         private void PathToInternal(Vector3 destination, short speed)
@@ -708,21 +714,16 @@ namespace DOL.GS
             Owner.Z = Owner.Z;
 
             if (distanceToTarget < 1)
-            {
-                _needsBroadcastUpdate = true;
                 IsDestinationValid = false;
-            }
             else
             {
-                if (CurrentSpeed != speed)
-                    _needsBroadcastUpdate = true;
-
                 _destination.X = (int) destination.X;
                 _destination.Y = (int) destination.Y;
                 _destination.Z = (int) destination.Z;
                 IsDestinationValid = true;
             }
 
+            _needsBroadcastUpdate = true;
             bool wasMoving = IsMoving;
             CurrentSpeed = speed;
             UpdateVelocity(distanceToTarget);
