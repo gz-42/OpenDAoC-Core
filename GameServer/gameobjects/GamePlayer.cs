@@ -987,34 +987,22 @@ namespace DOL.GS
                 QuestActionTimer = null;
             }
 
-            if (Group != null)
-                Group.RemoveMember(this);
-
-            BattleGroup myBattlegroup = TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY);
-            if (myBattlegroup != null)
-                myBattlegroup.RemoveBattlePlayer(this);
-
-            if (TradeWindow != null)
-                TradeWindow.CloseTrade();
-
-            if (m_guild != null)
-                m_guild.RemoveOnlineMember(this);
-
-            if (Mission != null)
-                Mission.ExpireMission();
-
-            ChatGroup mychatgroup = TempProperties.GetProperty<ChatGroup>(ChatGroup.CHATGROUP_PROPERTY);
-            if (mychatgroup != null)
-                mychatgroup.RemovePlayer(this);
+            TradeWindow?.CloseTrade();
+            Mission?.ExpireMission();
+            TempProperties.GetProperty<ChatGroup>(ChatGroup.CHATGROUP_PROPERTY)?.RemovePlayer(this);
 
             if (ControlledBrain != null)
                 CommandNpcRelease();
 
-            if (SiegeWeapon != null)
-                SiegeWeapon.ReleaseControl();
+            SiegeWeapon?.ReleaseControl();
 
             if (InHouse)
                 LeaveHouse();
+
+            Group?.RemoveMember(this);
+            TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY)?.RemoveBattlePlayer(this);
+            m_guild?.RemoveOnlineMember(this);
+            GroupMgr.RemovePlayerLooking(this);
 
             // Dinberg: this will eventually need to be changed so that it moves them to the location they TP'ed in.
             // DamienOphyr: Overwrite current position with Bind position in database, MoveTo() is inoperant
@@ -1028,14 +1016,11 @@ namespace DOL.GS
             }
 
             // Check for battleground caps.
-            DbBattleground bg = GameServer.KeepManager.GetBattleground(CurrentRegionID);
-            if (bg != null)
+            DbBattleground battleground = GameServer.KeepManager.GetBattleground(CurrentRegionID);
+            if (battleground != null && (ePrivLevel) Client.Account.PrivLevel is ePrivLevel.Player)
             {
-                if (Level > bg.MaxLevel || RealmLevel >= bg.MaxRealmLevel)
-                {
-                    if (Client.Account.PrivLevel == (int)ePrivLevel.Player)
-                        GameServer.KeepManager.ExitBattleground(this);
-                }
+                if (Level > battleground.MaxLevel || RealmLevel >= battleground.MaxRealmLevel)
+                    GameServer.KeepManager.ExitBattleground(this);
             }
 
             // Cancel all effects until saving of running effects is done.
@@ -1090,12 +1075,6 @@ namespace DOL.GS
                     log.Debug("Error in TempProproperties Manager when saving TempProp: " + e.ToString());
                 }
             }
-
-            Group?.RemoveMember(this);
-            BattleGroup mybattlegroup = TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY);
-            mybattlegroup?.RemoveBattlePlayer(this);
-            m_guild?.RemoveOnlineMember(this);
-            GroupMgr.RemovePlayerLooking(this);
 
             if (log.IsDebugEnabled)
                 log.DebugFormat("({0}) player.Delete()", Name);
@@ -1298,24 +1277,11 @@ namespace DOL.GS
         /// <summary>
         /// Binds this player to the current location
         /// </summary>
-        /// <param name="forced">if true, can bind anywhere</param>
-        public virtual void Bind(bool forced)
+        public void Bind()
         {
             if (CurrentRegion.IsInstance)
             {
                 Out.SendMessage(LanguageMgr.GetTranslation(Client.Account.Language, "GamePlayer.Bind.CantHere"), eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                return;
-            }
-
-            if (forced)
-            {
-                BindRegion = CurrentRegionID;
-                BindHeading = Heading;
-                BindXpos = X;
-                BindYpos = Y;
-                BindZpos = Z;
-                if (DBCharacter != null)
-                    GameServer.Database.SaveObject(DBCharacter);
                 return;
             }
 
@@ -1768,11 +1734,12 @@ namespace DOL.GS
                         }*/
                         default:
                         {
-                            relRegion = (ushort)BindRegion;
+                            ValidateBind();
+                            relRegion = (ushort) BindRegion;
                             relX = BindXpos;
                             relY = BindYpos;
                             relZ = BindZpos;
-                            relHeading = (ushort)BindHeading;
+                            relHeading = (ushort) BindHeading;
                             break;
                         }
                     }
@@ -1849,16 +1816,7 @@ namespace DOL.GS
             var maxChargeItems = ServerProperties.Properties.MAX_CHARGE_ITEMS;
             UpdatePlayerStatus();
 
-            Region region = null;
-            if ((region = WorldMgr.GetRegion((ushort)BindRegion)) != null && region.GetZone(BindXpos, BindYpos) != null)
-            {
-                Out.SendMessage(LanguageMgr.GetTranslation(Client.Account.Language, "GamePlayer.Release.SurroundingChange"), eChatType.CT_YouDied, eChatLoc.CL_SystemWindow);
-            }
-            else
-            {
-                Out.SendMessage(LanguageMgr.GetTranslation(Client.Account.Language, "GamePlayer.Release.NoValidBindpoint"), eChatType.CT_Important, eChatLoc.CL_SystemWindow);
-                Bind(true);
-            }
+            Out.SendMessage(LanguageMgr.GetTranslation(Client.Account.Language, "GamePlayer.Release.SurroundingChange"), eChatType.CT_YouDied, eChatLoc.CL_SystemWindow);
 
             int oldRegion = CurrentRegionID;
 
@@ -8374,38 +8332,25 @@ namespace DOL.GS
         //Eden - Move to bind, and check if the loc is allowed
         public virtual bool MoveToBind()
         {
-            Region rgn = WorldMgr.GetRegion((ushort)BindRegion);
-            if (rgn == null || rgn.GetZone(BindXpos, BindYpos) == null)
-            {
-                if (log.IsErrorEnabled)
-                    log.Error("Player: " + Name + " unknown bind point : (R/X/Y) " + BindRegion + "/" + BindXpos + "/" + BindYpos);
-                //Kick the player, avoid server freeze
-                Client.Out.SendPlayerQuit(true);
-                SaveIntoDatabase();
-                Quit(true);
-                //now ban him
-                if (ServerProperties.Properties.BAN_HACKERS)
-                {
-                    DbBans b = new DbBans();
-                    b.Author = "SERVER";
-                    b.Ip = Client.TcpEndpointAddress;
-                    b.Account = Client.Account.Name;
-                    b.DateBan = DateTime.Now;
-                    b.Type = "B";
-                    b.Reason = "X/Y/Zone : " + X + "/" + Y + "/" + CurrentRegion.ID;
-                    GameServer.Database.AddObject(b);
-                    GameServer.Database.SaveObject(b);
-                    string message = "Unknown bind point, your account is banned, contact a GM.";
-                    Client.Out.SendMessage(message, eChatType.CT_Help, eChatLoc.CL_SystemWindow);
-                    Client.Out.SendMessage(message, eChatType.CT_Help, eChatLoc.CL_ChatWindow);
-                }
+            if (!GameServer.ServerRules.IsAllowedToMoveToBind(this))
                 return false;
-            }
 
-            if (GameServer.ServerRules.IsAllowedToMoveToBind(this))
-                return MoveTo((ushort)BindRegion, BindXpos, BindYpos, BindZpos, (ushort)BindHeading);
+            ValidateBind();
+            return MoveTo((ushort) BindRegion, BindXpos, BindYpos, BindZpos, (ushort) BindHeading);
+        }
 
-            return false;
+        public void ValidateBind()
+        {
+            Region region = WorldMgr.GetRegion((ushort) BindRegion);
+
+            if (region != null && GameServer.ServerRules.IsAllowedToZone(this, region) && region.GetZone(BindXpos, BindYpos) != null)
+                return;
+
+            if (log.IsErrorEnabled)
+                log.Error($"Unknown bind point (Bind: {BindXpos},{BindYpos} in {BindRegion}) (Player: {this})");
+
+            // This method wasn't meant to be used this way, but this is good enough for now.
+            GameEvents.StartupLocations.CharacterCreation(null, null, new CharacterEventArgs(DBCharacter, Client));
         }
 
         #endregion
