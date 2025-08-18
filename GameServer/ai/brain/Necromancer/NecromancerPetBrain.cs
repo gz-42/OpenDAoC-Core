@@ -117,7 +117,7 @@ namespace DOL.AI.Brain
         {
             // Only start casting if the pet has finished his attack round.
             // This will be false most of the time, unless called from the attack component directly.
-            if (!ServiceUtils.ShouldTick(Body.attackComponent.attackAction.NextTick))
+            if (!GameServiceUtils.ShouldTick(Body.attackComponent.attackAction.NextTick))
             {
                 MessageToOwner(LanguageMgr.GetTranslation((Owner as GamePlayer).Client.Account.Language, "AI.Brain.Necromancer.CastSpellAfterAction", Body.Name), eChatType.CT_System, Owner as GamePlayer);
                 return false;
@@ -175,10 +175,7 @@ namespace DOL.AI.Brain
                     Body.attackComponent.StopAttack();
 
                 Body.TargetObject = spellTarget;
-                Body.CastSpell(spell, line, checkLos);
-
-                // Assume that the spell can always be cast, otherwise the same spell will be queued in the casting component if LoS checks are enabled.
-                return true;
+                return Body.CastSpell(spell, line, checkLos);
             }
             else
             {

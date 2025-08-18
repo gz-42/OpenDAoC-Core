@@ -2,22 +2,27 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using DOL.Logging;
 using ECS.Debug;
 
 namespace DOL.GS
 {
-    public static class MovementService
+    public sealed class MovementService : GameServiceBase
     {
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
-        private const string SERVICE_NAME = nameof(MovementService);
-        private static List<MovementComponent> _list;
-        private static int _entityCount;
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static void Tick()
+        private List<MovementComponent> _list;
+
+        public static new MovementService Instance { get; }
+
+        static MovementService()
         {
-            GameLoop.CurrentServiceTick = SERVICE_NAME;
-            Diagnostics.StartPerfCounter(SERVICE_NAME);
+            Instance = new();
+        }
 
+        public override void Tick()
+        {
+            ProcessPostedActions();
             int lastValidIndex;
 
             try
@@ -29,38 +34,32 @@ namespace DOL.GS
                 if (log.IsErrorEnabled)
                     log.Error($"{nameof(ServiceObjectStore.UpdateAndGetAll)} failed. Skipping this tick.", e);
 
-                Diagnostics.StopPerfCounter(SERVICE_NAME);
                 return;
             }
 
-            GameLoop.ExecuteWork(lastValidIndex + 1, TickInternal);
+            GameLoop.ExecuteForEach(_list, lastValidIndex + 1, TickInternal);
 
             if (Diagnostics.CheckServiceObjectCount)
-                Diagnostics.PrintServiceObjectCount(SERVICE_NAME, ref _entityCount, _list.Count);
-
-            Diagnostics.StopPerfCounter(SERVICE_NAME);
+                Diagnostics.PrintServiceObjectCount(ServiceName, ref EntityCount, _list.Count);
         }
 
-        private static void TickInternal(int index)
+        private static void TickInternal(MovementComponent movementComponent)
         {
-            MovementComponent movementComponent = null;
-
             try
             {
                 if (Diagnostics.CheckServiceObjectCount)
-                    Interlocked.Increment(ref _entityCount);
+                    Interlocked.Increment(ref Instance.EntityCount);
 
-                movementComponent = _list[index];
                 long startTick = GameLoop.GetRealTime();
                 movementComponent.Tick();
                 long stopTick = GameLoop.GetRealTime();
 
                 if (stopTick - startTick > Diagnostics.LongTickThreshold)
-                    log.Warn($"Long {SERVICE_NAME}.{nameof(Tick)} for: {movementComponent.Owner.Name}({movementComponent.Owner.ObjectID}) Time: {stopTick - startTick}ms");
+                    log.Warn($"Long {Instance.ServiceName}.{nameof(Tick)} for: {movementComponent.Owner.Name}({movementComponent.Owner.ObjectID}) Time: {stopTick - startTick}ms");
             }
             catch (Exception e)
             {
-                ServiceUtils.HandleServiceException(e, SERVICE_NAME, movementComponent, movementComponent.Owner);
+                GameServiceUtils.HandleServiceException(e, Instance.ServiceName, movementComponent, movementComponent.Owner);
             }
         }
     }

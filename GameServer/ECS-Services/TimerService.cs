@@ -2,22 +2,27 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using DOL.Logging;
 using ECS.Debug;
 
 namespace DOL.GS
 {
-    public class TimerService
+    public sealed class TimerService : GameServiceBase
     {
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
-        private const string SERVICE_NAME = nameof(TimerService);
-        private static List<ECSGameTimer> _list;
-        private static int _entityCount;
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static void Tick()
+        private List<ECSGameTimer> _list;
+
+        public static new TimerService Instance { get; }
+
+        static TimerService()
         {
-            GameLoop.CurrentServiceTick = SERVICE_NAME;
-            Diagnostics.StartPerfCounter(SERVICE_NAME);
+            Instance = new();
+        }
 
+        public override void Tick()
+        {
+            ProcessPostedActions();
             int lastValidIndex;
 
             try
@@ -29,42 +34,35 @@ namespace DOL.GS
                 if (log.IsErrorEnabled)
                     log.Error($"{nameof(ServiceObjectStore.UpdateAndGetAll)} failed. Skipping this tick.", e);
 
-                Diagnostics.StopPerfCounter(SERVICE_NAME);
                 return;
             }
 
-            GameLoop.ExecuteWork(lastValidIndex + 1, TickInternal);
+            GameLoop.ExecuteForEach(_list, lastValidIndex + 1, TickInternal);
 
             if (Diagnostics.CheckServiceObjectCount)
-                Diagnostics.PrintServiceObjectCount(SERVICE_NAME, ref _entityCount, _list.Count);
-
-            Diagnostics.StopPerfCounter(SERVICE_NAME);
+                Diagnostics.PrintServiceObjectCount(ServiceName, ref EntityCount, _list.Count);
         }
 
-        private static void TickInternal(int index)
+        private static void TickInternal(ECSGameTimer timer)
         {
-            ECSGameTimer timer = null;
-
             try
             {
                 if (Diagnostics.CheckServiceObjectCount)
-                    Interlocked.Increment(ref _entityCount);
+                    Interlocked.Increment(ref Instance.EntityCount);
 
-                timer = _list[index];
-
-                if (ServiceUtils.ShouldTick(timer.NextTick))
+                if (GameServiceUtils.ShouldTick(timer.NextTick))
                 {
                     long startTick = GameLoop.GetRealTime();
                     timer.Tick();
                     long stopTick = GameLoop.GetRealTime();
 
                     if (stopTick - startTick > Diagnostics.LongTickThreshold)
-                        log.Warn($"Long {SERVICE_NAME}.{nameof(Tick)} for Timer Callback: {timer.CallbackInfo?.DeclaringType}:{timer.CallbackInfo?.Name}  Owner: {timer.Owner?.Name} Time: {stopTick - startTick}ms");
+                        log.Warn($"Long {Instance.ServiceName}.{nameof(Tick)} for Timer Callback: {timer.CallbackInfo?.DeclaringType}:{timer.CallbackInfo?.Name}  Owner: {timer.Owner?.Name} Time: {stopTick - startTick}ms");
                 }
             }
             catch (Exception e)
             {
-                ServiceUtils.HandleServiceException(e, SERVICE_NAME, timer, timer.Owner);
+                GameServiceUtils.HandleServiceException(e, Instance.ServiceName, timer, timer.Owner);
             }
         }
     }

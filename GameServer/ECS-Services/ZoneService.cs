@@ -2,22 +2,27 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using DOL.Logging;
 using ECS.Debug;
 
 namespace DOL.GS
 {
-    public static class ZoneService
+    public sealed class ZoneService : GameServiceBase
     {
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
-        private const string SERVICE_NAME = nameof(ZoneService);
-        private static List<ObjectChangingSubZone> _list;
-        private static int _entityCount;
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
-        public static void Tick()
+        private List<ObjectChangingSubZone> _list;
+
+        public static new ZoneService Instance { get; }
+
+        static ZoneService()
         {
-            GameLoop.CurrentServiceTick = SERVICE_NAME;
-            Diagnostics.StartPerfCounter(SERVICE_NAME);
+            Instance = new();
+        }
 
+        public override void Tick()
+        {
+            ProcessPostedActions();
             int lastValidIndex;
 
             try
@@ -29,29 +34,24 @@ namespace DOL.GS
                 if (log.IsErrorEnabled)
                     log.Error($"{nameof(ServiceObjectStore.UpdateAndGetAll)} failed. Skipping this tick.", e);
 
-                Diagnostics.StopPerfCounter(SERVICE_NAME);
                 return;
             }
 
-            GameLoop.ExecuteWork(lastValidIndex + 1, TickInternal);
+            GameLoop.ExecuteForEach(_list, lastValidIndex + 1, TickInternal);
 
             if (Diagnostics.CheckServiceObjectCount)
-                Diagnostics.PrintServiceObjectCount(SERVICE_NAME, ref _entityCount, _list.Count);
-
-            Diagnostics.StopPerfCounter(SERVICE_NAME);
+                Diagnostics.PrintServiceObjectCount(ServiceName, ref EntityCount, _list.Count);
         }
 
-        private static void TickInternal(int index)
+        private static void TickInternal(ObjectChangingSubZone objectChangingSubZone)
         {
-            ObjectChangingSubZone objectChangingSubZone = null;
             SubZoneObject subZoneObject = null;
 
             try
             {
                 if (Diagnostics.CheckServiceObjectCount)
-                    Interlocked.Increment(ref _entityCount);
+                    Interlocked.Increment(ref Instance.EntityCount);
 
-                objectChangingSubZone = _list[index];
                 subZoneObject = objectChangingSubZone.SubZoneObject;
                 LinkedListNode<GameObject> node = subZoneObject.Node;
                 SubZone currentSubZone = subZoneObject.CurrentSubZone;
@@ -100,7 +100,7 @@ namespace DOL.GS
             }
             catch (Exception e)
             {
-                ServiceUtils.HandleServiceException(e, SERVICE_NAME, objectChangingSubZone, objectChangingSubZone.SubZoneObject?.Node?.Value);
+                GameServiceUtils.HandleServiceException(e, Instance.ServiceName, objectChangingSubZone, objectChangingSubZone.SubZoneObject?.Node?.Value);
             }
             finally
             {

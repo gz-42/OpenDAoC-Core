@@ -3354,7 +3354,7 @@ namespace DOL.GS
 		public bool CanCastInstantMiscSpells => InstantMiscSpells != null && InstantMiscSpells.Count > 0;
 
 		private long _nextInstantHarmfulSpell;
-		public virtual bool IsInstantHarmfulSpellCastingLocked => !ServiceUtils.ShouldTick(_nextInstantHarmfulSpell);
+		public virtual bool IsInstantHarmfulSpellCastingLocked => !GameServiceUtils.ShouldTick(_nextInstantHarmfulSpell);
 
 		public virtual void ApplyInstantHarmfulSpellDelay()
 		{
@@ -3545,7 +3545,8 @@ namespace DOL.GS
 		{
 			bool casted;
 
-			if (checkLos)
+			// Don't check for LoS if the spell has no range.
+			if (checkLos && spell.Range > 0)
 				casted = CastSpell(spell, line);
 			else
 			{
@@ -3581,7 +3582,7 @@ namespace DOL.GS
 				{
 					for (int i = list.Count - 1; i >= 0; i--)
 					{
-						if (ServiceUtils.ShouldTick(list[i].RequestTime + 2000))
+						if (GameServiceUtils.ShouldTick(list[i].RequestTime + 2000))
 							list.SwapRemoveAt(i);
 					}
 

@@ -2,35 +2,39 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using DOL.Database;
-using ECS.Debug;
+using DOL.Logging;
 
 namespace DOL.GS
 {
-    public class MonthlyQuestService
+    public sealed class MonthlyQuestService : GameServiceBase
     {
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
-        private const string SERVICE_NAME = "MonthlyQuestService";
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
+
         private const string MONTHLY_INTERVAL_KEY = "MONTHLY";
-        private static DateTime lastMonthlyRollover;
+        private DateTime _lastMonthlyRollover;
+
+        public static new MonthlyQuestService Instance { get; }
 
         static MonthlyQuestService()
+        {
+            Instance = new();
+        }
+
+        private MonthlyQuestService()
         {
             IList<DbTaskRefreshInterval> loadQuestsProp = GameServer.Database.SelectAllObjects<DbTaskRefreshInterval>();
 
             foreach (DbTaskRefreshInterval interval in loadQuestsProp)
             {
                 if (interval.RolloverInterval.Equals(MONTHLY_INTERVAL_KEY))
-                    lastMonthlyRollover = interval.LastRollover;
+                    _lastMonthlyRollover = interval.LastRollover;
             }
         }
 
-        public static void Tick()
+        public override void Tick()
         {
-            Diagnostics.StartPerfCounter(SERVICE_NAME);
-            //.WriteLine($"daily:{lastDailyRollover.Date.DayOfYear} weekly:{lastWeeklyRollover.Date.DayOfYear+7} now:{DateTime.Now.Date.DayOfYear}");
-
             // This is where the weekly check will go once testing is finished.
-            if (lastMonthlyRollover.Date.Month < DateTime.Now.Date.Month || lastMonthlyRollover.Year < DateTime.Now.Year)
+            if (_lastMonthlyRollover.Date.Month < DateTime.Now.Date.Month || _lastMonthlyRollover.Year < DateTime.Now.Year)
             {
                 DbTaskRefreshInterval loadQuestsProp = GameServer.Database.SelectObject<DbTaskRefreshInterval>(DB.Column("RolloverInterval").IsEqualTo(MONTHLY_INTERVAL_KEY));
 
@@ -60,11 +64,10 @@ namespace DOL.GS
                     if (log.IsErrorEnabled)
                         log.Error($"{nameof(ServiceObjectStore.UpdateAndGetAll)} failed. Skipping this tick.", e);
 
-                    Diagnostics.StopPerfCounter(SERVICE_NAME);
                     return;
                 }
 
-                lastMonthlyRollover = DateTime.Now;
+                _lastMonthlyRollover = DateTime.Now;
 
                 for (int i = 0; i < lastValidIndex + 1; i++)
                 {
@@ -80,8 +83,6 @@ namespace DOL.GS
                         GameServer.Database.DeleteObject(existingMonthlyQuest);
                 }
             }
-
-            Diagnostics.StopPerfCounter(SERVICE_NAME);
         }
     }
 }
