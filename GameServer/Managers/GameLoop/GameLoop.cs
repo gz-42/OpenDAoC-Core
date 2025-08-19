@@ -14,14 +14,13 @@ namespace DOL.GS
         private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         public const string THREAD_NAME = "GameLoop";
-        private const bool DYNAMIC_BUSY_WAIT_THRESHOLD = true; // Setting it to false disables busy waiting completely unless a default value is given to '_busyWaitThreshold'.
 
         private static Thread _gameLoopThread;
         private static GameLoopThreadPool _threadPool;
         private static GameLoopTickPacer _tickPacer;
         private static long _stopwatchFrequencyMilliseconds = Stopwatch.Frequency / 1000;
         private static bool _running;
-        private static List<(IGameService Service, Action TickAction, string ProfileKey)> _tickSequence;
+        private static List<TickStep> _tickSequence;
 
         public static long TickDuration { get; private set; }
         public static long GameLoopTime { get; private set; }
@@ -47,12 +46,8 @@ namespace DOL.GS
             };
             _gameLoopThread.Start();
 
-            if (DYNAMIC_BUSY_WAIT_THRESHOLD)
-            {
-                _tickPacer = new(TickDuration);
-                _tickPacer.Start();
-            }
-
+            _tickPacer = new(TickDuration);
+            _tickPacer.Start();
             return true;
         }
 
@@ -70,7 +65,7 @@ namespace DOL.GS
 
         public static List<(int, double)> GetAverageTps()
         {
-            return _tickPacer.Stats.GetAverageTicks(GameLoopTime);
+            return _tickPacer.Stats.GetAverageTicks();
         }
 
         public static void ExecuteForEach<T>(List<T> items, int toExclusive, Action<T> action)
@@ -116,28 +111,30 @@ namespace DOL.GS
 
         private static void TickServices()
         {
-            Diagnostics.StartPerfCounter(nameof(GameLoop));
+            Diagnostics.StartPerfCounter(THREAD_NAME);
 
-            foreach (var (service, tickAction, profileKey) in _tickSequence)
-                TickServiceAction(service, tickAction, profileKey);
+            for (int i = 0; i < _tickSequence.Count; i++)
+            {
+                TickStep tickStep = _tickSequence[i];
+                ExecutionContext.Run(tickStep.Context, TickCallback, tickStep.State);
+            }
 
-            Diagnostics.StopPerfCounter(nameof(GameLoop));
+            Diagnostics.StopPerfCounter(THREAD_NAME);
             Diagnostics.Tick();
 
-            static void TickServiceAction(IGameService service, Action tickAction, string profileKey)
+            static void TickCallback(object state)
             {
-                ActiveService = profileKey;
-                GameServiceContext.Current.Value = service;
+                TickState tickState = (TickState) state;
+                ActiveService = tickState.ProfileKey;
                 Diagnostics.StartPerfCounter(ActiveService);
 
                 try
                 {
-                    tickAction();
+                    tickState.TickAction();
                 }
                 finally
                 {
                     Diagnostics.StopPerfCounter(ActiveService);
-                    GameServiceContext.Current.Value = null;
                     ActiveService = string.Empty;
                 }
             }
@@ -146,6 +143,7 @@ namespace DOL.GS
         private static void BuildTickSequence()
         {
             _tickSequence = new();
+
             AddStep(GameLoopService.Instance, GameLoopService.Instance.Tick);
             AddStep(TimerService.Instance, TimerService.Instance.Tick);
             AddStep(ClientService.Instance, ClientService.Instance.BeginTick);
@@ -163,11 +161,38 @@ namespace DOL.GS
             AddStep(WeeklyQuestService.Instance, WeeklyQuestService.Instance.Tick);
             AddStep(MonthlyQuestService.Instance, MonthlyQuestService.Instance.Tick);
 
+            GameServiceContext.Current.Value = null;
+
             static void AddStep(IGameService service, Action action)
             {
                 string methodName = action.Method.Name;
                 string profileKey = methodName == nameof(IGameService.Tick) ? service.ServiceName : $"{service.ServiceName}.{methodName}";
-                _tickSequence.Add((service, action, profileKey));
+                GameServiceContext.Current.Value = service;
+                _tickSequence.Add(new(new(action, profileKey), ExecutionContext.Capture()));
+            }
+        }
+
+        private readonly struct TickStep
+        {
+            public readonly TickState State;
+            public readonly ExecutionContext Context;
+
+            public TickStep(TickState state, ExecutionContext context)
+            {
+                State = state;
+                Context = context;
+            }
+        }
+
+        private sealed class TickState
+        {
+            public readonly Action TickAction;
+            public readonly string ProfileKey;
+
+            public TickState(Action tickAction, string profileKey)
+            {
+                TickAction = tickAction;
+                ProfileKey = profileKey;
             }
         }
     }
