@@ -14,7 +14,6 @@ namespace DOL.GS
 
         public const short DEFAULT_WALK_SPEED = 70;
 
-        private Vector3 _ownerPosition;
         private MovementState _movementState;
         private Vector3 _velocity;
         private Vector3 _destination;
@@ -78,7 +77,8 @@ namespace DOL.GS
 
         protected override void TickInternal()
         {
-            _ownerPosition = new(Owner.X, Owner.Y, Owner.Z);
+            // Update the component's position first for correct calculations, since NPCs position (GameNPC X,Y,Z) is interpolated.
+            UpdatePosition();
 
             if (IsFlagSet(MovementState.TURN_TO))
             {
@@ -138,8 +138,9 @@ namespace DOL.GS
 
                 if (_needsBroadcastUpdate)
                 {
-                    ClientService.UpdateNpcForPlayers(Owner);
                     _needsBroadcastUpdate = false;
+                    OnPositionUpdate();
+                    ClientService.UpdateNpcForPlayers(Owner);
                 }
 
                 if (_movementState is MovementState.NONE)
@@ -287,7 +288,7 @@ namespace DOL.GS
 
             if (Owner.CurrentZone.IsPathingEnabled)
             {
-                Vector3? target = PathingMgr.Instance.GetRandomPointAsync(Owner.CurrentZone, new(Owner.SpawnPoint.X, Owner.SpawnPoint.Y, Owner.SpawnPoint.Z), maxRoamingRadius);
+                Vector3? target = PathingMgr.Instance.GetRandomPoint(Owner.CurrentZone, new(Owner.SpawnPoint.X, Owner.SpawnPoint.Y, Owner.SpawnPoint.Z), maxRoamingRadius);
 
                 if (target.HasValue)
                     PathTo(target.Value, speed);
