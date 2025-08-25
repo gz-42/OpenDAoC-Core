@@ -11,17 +11,18 @@ using DOL.GS.Keeps;
 using DOL.GS.PacketHandler;
 using DOL.GS.ServerProperties;
 using DOL.Language;
+using DOL.Logging;
 using static DOL.GS.IGameStaticItemOwner;
 using static DOL.GS.ServerRules.IServerRules;
 
 namespace DOL.GS.ServerRules
 {
     public abstract class AbstractServerRules : IServerRules
-        {
+    {
         /// <summary>
         /// Defines a logger for this class.
         /// </summary>
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// This is called after the rules are created to do any event binding or other tasks
@@ -1528,7 +1529,7 @@ namespace DOL.GS.ServerRules
                 };
 
                 NotifyNearbyPlayers(killedNpc, money, playersInRadius);
-                money.AddToWorld();
+
                 // Attempt auto pick up.
                 foreach (ItemOwnerTotalDamagePair itemOwner in itemOwners)
                 {
@@ -1537,6 +1538,8 @@ namespace DOL.GS.ServerRules
                     if (money.TryAutoPickUp(itemOwner.Owner))
                         return;
                 }
+
+                money.AddToWorld();
             }
 
             static void CreateItem(GameNPC killedNpc, DbItemTemplate itemTemplate, SortedSet<ItemOwnerTotalDamagePair> itemOwners, List<GamePlayer> nearbyPlayers)
@@ -1573,7 +1576,6 @@ namespace DOL.GS.ServerRules
                 };
 
                 NotifyNearbyPlayers(killedNpc, item, nearbyPlayers);
-                item.AddToWorld();
 
                 // Attempt auto pick up.
                 foreach (ItemOwnerTotalDamagePair itemOwner in itemOwners)
@@ -1583,6 +1585,8 @@ namespace DOL.GS.ServerRules
                     if (item.TryAutoPickUp(itemOwner.Owner))
                         return;
                 }
+
+                item.AddToWorld();
             }
 
             static void NotifyNearbyPlayers(GameNPC killedNpc, GameStaticItemTimed item, List<GamePlayer> nearbyPlayers)
