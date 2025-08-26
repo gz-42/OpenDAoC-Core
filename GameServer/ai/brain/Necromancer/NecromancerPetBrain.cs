@@ -41,12 +41,10 @@ namespace DOL.AI.Brain
 
             if (Body.attackComponent.AttackState || Body.IsCasting)
             {
-                if (spell.IsInstantCast && !spell.IsHarmful)
-                    CastSpell(spell, spellLine, target, true);
-                else if (!spell.IsInstantCast)
-                    AddToSpellQueue(spell, spellLine, target);
-                else
+                if (spell.IsInstantCast)
                     AddToAttackSpellQueue(spell, spellLine, target);
+                else
+                    AddToSpellQueue(spell, spellLine, target);
             }
             else
             {
@@ -122,6 +120,10 @@ namespace DOL.AI.Brain
                 MessageToOwner(LanguageMgr.GetTranslation((Owner as GamePlayer).Client.Account.Language, "AI.Brain.Necromancer.CastSpellAfterAction", Body.Name), eChatType.CT_System, Owner as GamePlayer);
                 return false;
             }
+
+            // Check the attack spell queue before casting spells.
+            // This allows instant spells such as FP to be activated first.
+            CheckAttackSpellQueue();
 
             SpellQueueEntry entry = GetSpellFromQueue();
 

@@ -862,9 +862,6 @@ namespace DOL.GS.PacketHandler
 
 		public virtual void SendPlayerQuit(bool totalOut)
 		{
-			// Prevents the client from entering the game when this is called when the player is changing region.
-			m_gameClient.PacketProcessor.ClearPendingOutboundPackets();
-
 			using (var pak = PooledObjectFactory.GetForTick<GSTCPPacketOut>().Init(GetPacketCode(eServerPackets.Quit)))
 			{
 				pak.WriteByte((byte)(totalOut ? 0x01 : 0x00));
@@ -1518,8 +1515,7 @@ namespace DOL.GS.PacketHandler
 			if (m_gameClient.Player == null || source == null || target == null)
 				return false;
 
-			m_gameClient.Player.LosCheckHandler.StartLosCheck(source, target, callback);
-			return true;
+			return m_gameClient.Player.LosCheckHandler.StartLosCheck(source, target, callback);
 		}
 
 		public virtual void SendQuestListUpdate()
