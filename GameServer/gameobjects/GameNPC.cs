@@ -1155,9 +1155,9 @@ namespace DOL.GS
 			mob.Guild = GuildName;
 			mob.ExamineArticle = ExamineArticle;
 			mob.MessageArticle = MessageArticle;
-			mob.X = X;
-			mob.Y = Y;
-			mob.Z = Z;
+			mob.X = m_x;
+			mob.Y = m_y;
+			mob.Z = m_z;
 			mob.Heading = Heading;
 			mob.Speed = MaxSpeedBase;
 			mob.Region = CurrentRegionID;
@@ -1959,10 +1959,9 @@ namespace DOL.GS
 			if (MAX_PASSENGERS > 0)
 				Riders = new GamePlayer[MAX_PASSENGERS];
 
-			ClientService.CreateObjectForPlayers(this);
-			m_spawnPoint.X = X;
-			m_spawnPoint.Y = Y;
-			m_spawnPoint.Z = Z;
+			m_spawnPoint.X = m_x;
+			m_spawnPoint.Y = m_y;
+			m_spawnPoint.Z = m_z;
 			m_spawnHeading = Heading;
 
 			Brain?.Start();
@@ -2004,9 +2003,9 @@ namespace DOL.GS
 					{
 						Name = string.Empty,
 						Model = 1923,
-						X = X,
-						Y = Y,
-						Z = Z + 1,
+						X = m_x,
+						Y = m_y,
+						Z = m_z + 1,
 						CurrentRegionID = CurrentRegionID,
 						Flags = eFlags.PEACE | eFlags.CANTTARGET | eFlags.DONTSHOWNAME | eFlags.FLYING
 					};
@@ -2018,7 +2017,8 @@ namespace DOL.GS
 			if (IsStealthed)
 				WasStealthed = true;
 
-			movementComponent.PositionForClient = new(X, Y, Z); // Ensure a correct initial state. Movement component can't do it itself.
+			movementComponent.ForceUpdatePosition(); // Ensure a correct initial state. Movement component can't do it itself.
+			ClientService.CreateObjectForPlayers(this);
 			return true;
 		}
 
@@ -2106,6 +2106,7 @@ namespace DOL.GS
 				player.Out.SendObjectRemove(this);
 
 			// New position.
+			movementComponent.ForceUpdatePosition();
 			ClientService.CreateObjectForPlayers(this);
 			return true;
 		}
@@ -4146,9 +4147,9 @@ namespace DOL.GS
 			copyTarget.SaveInDB = SaveInDB;
 			copyTarget.Strength = Strength;
 			copyTarget.TetherRange = TetherRange;
-			copyTarget.X = X;
-			copyTarget.Y = Y;
-			copyTarget.Z = Z;
+			copyTarget.X = m_x;
+			copyTarget.Y = m_y;
+			copyTarget.Z = m_z;
 			copyTarget.OwnerID = OwnerID;
 			copyTarget.PackageID = PackageID;
 

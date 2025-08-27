@@ -26,6 +26,14 @@ namespace DOL.AI.Brain
             FSM.Think();
         }
 
+        public override void Attack(GameObject target)
+        {
+            if (m_orderAttackTarget == null && !Body.InCombat)
+                ClearAttackSpellQueue();
+
+            base.Attack(target);
+        }
+
         public override void Disengage()
         {
             base.Disengage();
@@ -39,20 +47,10 @@ namespace DOL.AI.Brain
             if (Body.IsCasting)
                 MessageToOwner(LanguageMgr.GetTranslation((Owner as GamePlayer).Client.Account.Language, "AI.Brain.Necromancer.CastSpellAfterAction", Body.Name), eChatType.CT_System, Owner as GamePlayer);
 
-            if (Body.attackComponent.AttackState || Body.IsCasting)
-            {
-                if (spell.IsInstantCast)
-                    AddToAttackSpellQueue(spell, spellLine, target);
-                else
-                    AddToSpellQueue(spell, spellLine, target);
-            }
+            if (spell.IsInstantCast)
+                AddToAttackSpellQueue(spell, spellLine, target);
             else
-            {
-                if (spell.IsInstantCast)
-                    CastSpell(spell, spellLine, target, true);
-                else
-                    AddToSpellQueue(spell, spellLine, target);
-            }
+                AddToSpellQueue(spell, spellLine, target);
 
             // Immediately try to cast.
             CheckSpellQueue();
@@ -123,7 +121,8 @@ namespace DOL.AI.Brain
 
             // Check the attack spell queue before casting spells.
             // This allows instant spells such as FP to be activated first.
-            CheckAttackSpellQueue();
+            if (!Body.IsCasting)
+                CheckAttackSpellQueue();
 
             SpellQueueEntry entry = GetSpellFromQueue();
 

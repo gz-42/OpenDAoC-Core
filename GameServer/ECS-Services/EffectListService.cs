@@ -22,7 +22,7 @@ namespace DOL.GS
             Instance = new();
         }
 
-        public override void BeginTick()
+        public override void Tick()
         {
             ProcessPostedActionsParallel();
 
@@ -39,35 +39,13 @@ namespace DOL.GS
                 return;
             }
 
-            GameLoop.ExecuteForEach(_list, _lastValidIndex + 1, BeginTickInternal);
-        }
-
-        public override void EndTick()
-        {
-            GameLoop.ExecuteForEach(_list, _lastValidIndex + 1, EndTickInternal);
+            GameLoop.ExecuteForEach(_list, _lastValidIndex + 1, TickInternal);
 
             if (Diagnostics.CheckServiceObjectCount)
                 Diagnostics.PrintServiceObjectCount(ServiceName, ref EntityCount, _list.Count);
         }
 
-        private static void BeginTickInternal(EffectListComponent effectListComponent)
-        {
-            try
-            {
-                long startTick = GameLoop.GetRealTime();
-                effectListComponent.BeginTick();
-                long stopTick = GameLoop.GetRealTime();
-
-                if (stopTick - startTick > Diagnostics.LongTickThreshold)
-                    log.Warn($"Long {Instance.ServiceName}.{nameof(BeginTickInternal)} for: {effectListComponent.Owner.Name}({effectListComponent.Owner.ObjectID}) Time: {stopTick - startTick}ms");
-            }
-            catch (Exception e)
-            {
-                GameServiceUtils.HandleServiceException(e, Instance.ServiceName, effectListComponent, effectListComponent.Owner);
-            }
-        }
-
-        private static void EndTickInternal(EffectListComponent effectListComponent)
+        private static void TickInternal(EffectListComponent effectListComponent)
         {
             try
             {
@@ -75,11 +53,11 @@ namespace DOL.GS
                     Interlocked.Increment(ref Instance.EntityCount);
 
                 long startTick = GameLoop.GetRealTime();
-                effectListComponent.EndTick();
+                effectListComponent.Tick();
                 long stopTick = GameLoop.GetRealTime();
 
                 if (stopTick - startTick > Diagnostics.LongTickThreshold)
-                    log.Warn($"Long {Instance.ServiceName}.{nameof(EndTickInternal)} for: {effectListComponent.Owner.Name}({effectListComponent.Owner.ObjectID}) Time: {stopTick - startTick}ms");
+                    log.Warn($"Long {Instance.ServiceName}.{nameof(TickInternal)} for: {effectListComponent.Owner.Name}({effectListComponent.Owner.ObjectID}) Time: {stopTick - startTick}ms");
             }
             catch (Exception e)
             {
