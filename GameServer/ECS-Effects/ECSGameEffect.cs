@@ -8,23 +8,7 @@ using DOL.Language;
 
 namespace DOL.GS
 {
-    public readonly ref struct ECSGameEffectInitParams
-    {
-        public readonly GameLiving Target { get; }
-        public readonly int Duration { get; }
-        public readonly double Effectiveness { get; }
-        public readonly ISpellHandler SpellHandler { get; }
-
-        public ECSGameEffectInitParams(GameLiving target, int duration, double effectiveness, ISpellHandler spellHandler = null)
-        {
-            Target = target;
-            Duration = duration;
-            Effectiveness = effectiveness;
-            SpellHandler = spellHandler;
-        }
-    }
-
-    public class ECSGameEffect : IServiceObject
+    public abstract class ECSGameEffect : IServiceObject
     {
         private State _state;
         private TransitionalState _transitionalState;
@@ -69,8 +53,6 @@ namespace DOL.GS
         public bool CanBeEnabled => IsDisabled && CanChangeState;
         public bool CanBeStopped => (IsActive || IsDisabled) && CanChangeState;
 
-        public ECSGameEffect() { }
-
         public ECSGameEffect(in ECSGameEffectInitParams initParams)
         {
             Owner = initParams.Target;
@@ -83,10 +65,8 @@ namespace DOL.GS
             SpellHandler = initParams.SpellHandler;
         }
 
-        protected bool Start()
+        public bool Start()
         {
-            // Only meant to be called by the constructor.
-
             if (!CanStart)
                 return false;
 
@@ -211,21 +191,26 @@ namespace DOL.GS
                 {
                     case EffectListComponent.AddEffectResult.Added:
                     {
+                        ServiceObjectStore.Add(this);
                         _state = State.Active;
                         return true;
                     }
                     case EffectListComponent.AddEffectResult.RenewedActive:
                     {
+                        ServiceObjectStore.Add(this);
                         _state = State.Active;
                         return false;
                     }
                     case EffectListComponent.AddEffectResult.Disabled:
                     {
+                        ServiceObjectStore.Add(this);
                         _state = State.Disabled;
                         return false;
                     }
                     case EffectListComponent.AddEffectResult.RenewedDisabled:
                     {
+                        ServiceObjectStore.Add(this);
+
                         if (IsDisabled)
                         {
                             _state = State.Active;
@@ -238,7 +223,6 @@ namespace DOL.GS
                         }
                     }
                     case EffectListComponent.AddEffectResult.Failed:
-                        return false;
                     default:
                         throw new InvalidOperationException($"Unhandled result: {result}.");
                 }
@@ -258,18 +242,19 @@ namespace DOL.GS
                 {
                     case EffectListComponent.RemoveEffectResult.Removed:
                     {
+                        ServiceObjectStore.Remove(this);
                         bool shouldBeStopped = IsActive;
                         _state = State.Stopped;
                         return shouldBeStopped;
                     }
                     case EffectListComponent.RemoveEffectResult.Disabled:
                     {
+                        ServiceObjectStore.Add(this);
                         bool shouldBeStopped = IsActive;
                         _state = State.Disabled;
                         return shouldBeStopped;
                     }
                     case EffectListComponent.RemoveEffectResult.Failed:
-                        return false;
                     default:
                         throw new InvalidOperationException($"Unhandled result: {result}.");
                 }
