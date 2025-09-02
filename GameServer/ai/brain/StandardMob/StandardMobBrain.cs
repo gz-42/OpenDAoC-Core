@@ -164,7 +164,7 @@ namespace DOL.AI.Brain
             if (Body.ambientTexts != null && Body.ambientTexts.Any(item => item.Trigger == "seeing"))
             {
                 // Check if we can "see" players and fire off ambient text
-                List<GamePlayer> currentPlayersSeen = new();
+                List<GamePlayer> currentPlayersSeen = GameLoop.GetListForTick<GamePlayer>();
 
                 foreach (GamePlayer player in Body.GetPlayersInRadius((ushort) AggroRange))
                 {
@@ -873,69 +873,84 @@ namespace DOL.AI.Brain
             }
 
             return casted || Body.IsCasting;
+        }
 
-            bool CheckOffensiveSpells(List<Spell> spells)
+        private bool CheckOffensiveSpells(List<Spell> spells)
+        {
+            Spell spellToCast = null;
+            int castableCount = 0;
+
+            foreach (Spell spell in spells)
             {
-                List<Spell> spellsToCast = new(spells.Count);
-
-                foreach (Spell spell in spells)
+                if (CanCastOffensiveSpell(spell))
                 {
-                    if (CanCastOffensiveSpell(spell))
-                        spellsToCast.Add(spell);
-                }
+                    // With each valid spell we find, we give it a 1-in-N chance to become the chosen one.
+                    if (Util.Random(castableCount) == 0)
+                        spellToCast = spell;
 
-                return spellsToCast.Count > 0 && Body.CastSpell(spellsToCast[Util.Random(spellsToCast.Count - 1)], m_mobSpellLine);
-
-                bool CanCastOffensiveSpell(Spell spell)
-                {
-                    if ((spell.CastTime > 0 && !spell.Uninterruptible && Body.IsBeingInterrupted) ||
-                        (spell.HasRecastDelay && Body.GetSkillDisabledDuration(spell) > 0))
-                    {
-                        return false;
-                    }
-
-                    return Body.TargetObject is GameLiving target &&
-                           Body.IsWithinRadius(target, spell.CalculateEffectiveRange(Body)) &&
-                           ((spell.Duration <= 0 && !spell.IsConcentration) || !LivingHasEffect(target, spell) || spell.SpellType is eSpellType.DirectDamageWithDebuff or eSpellType.DamageSpeedDecrease);
+                    castableCount++;
                 }
             }
 
-            bool CheckDefensiveSpells(List<Spell> spells)
+            return spellToCast != null && Body.CastSpell(spellToCast, m_mobSpellLine);
+        }
+
+        private bool CanCastOffensiveSpell(Spell spell)
+        {
+            if ((spell.CastTime > 0 && !spell.Uninterruptible && Body.IsBeingInterrupted) ||
+                (spell.HasRecastDelay && Body.GetSkillDisabledDuration(spell) > 0))
             {
-                // Contrary to offensive spells, we don't start with a valid target.
-                // So the idea here is to find a target, switch before calling `CastDefensiveSpell`, then retrieve our previous target.
-                List<(Spell, GameLiving)> spellsToCast = new(spells.Count);
+                return false;
+            }
 
-                foreach (Spell spell in spells)
+            return Body.TargetObject is GameLiving target &&
+                    Body.IsWithinRadius(target, spell.CalculateEffectiveRange(Body)) &&
+                    ((spell.Duration <= 0 && !spell.IsConcentration) || !LivingHasEffect(target, spell) || spell.SpellType is eSpellType.DirectDamageWithDebuff or eSpellType.DamageSpeedDecrease);
+        }
+
+        private bool CheckDefensiveSpells(List<Spell> spells)
+        {
+            (Spell spell, GameLiving target) candidate = (null, null);
+            int validSpellsFound = 0;
+
+            foreach (Spell spell in spells)
+            {
+                if (CanCastDefensiveSpell(spell, out GameLiving target))
                 {
-                    if (CanCastDefensiveSpell(spell, out GameLiving target))
-                        spellsToCast.Add((spell, target));
-                }
+                    // Reservoir Sampling for a single item (k=1).
+                    // The first valid spell is always chosen.
+                    // The second has a 1/2 chance of replacing the first.
+                    // The third has a 1/3 chance of replacing the current candidate, and so on.
+                    if (Util.Random(validSpellsFound) == 0)
+                        candidate = (spell, target);
 
-                if (spellsToCast.Count == 0)
-                    return false;
-
-                GameObject oldTarget = Body.TargetObject;
-                (Spell spell, GameLiving target) spellToCast = spellsToCast[Util.Random(spellsToCast.Count - 1)];
-                Body.TargetObject = spellToCast.target;
-                bool cast = Body.CastSpell(spellToCast.spell, m_mobSpellLine);
-                Body.TargetObject = oldTarget;
-                return cast;
-
-                bool CanCastDefensiveSpell(Spell spell, out GameLiving target)
-                {
-                    target = null;
-
-                    if ((spell.CastTime > 0 && !spell.Uninterruptible && Body.IsBeingInterrupted) ||
-                        (spell.HasRecastDelay && Body.GetSkillDisabledDuration(spell) > 0))
-                    {
-                        return false;
-                    }
-
-                    target = FindTargetForDefensiveSpell(spell);
-                    return target != null;
+                    validSpellsFound++;
                 }
             }
+
+            if (validSpellsFound == 0)
+                return false;
+
+            // We have our randomly selected candidate, now perform the cast
+            GameObject oldTarget = Body.TargetObject;
+            Body.TargetObject = candidate.target;
+            bool cast = Body.CastSpell(candidate.spell, m_mobSpellLine);
+            Body.TargetObject = oldTarget;
+            return cast;
+        }
+
+        private bool CanCastDefensiveSpell(Spell spell, out GameLiving target)
+        {
+            target = null;
+
+            if ((spell.CastTime > 0 && !spell.Uninterruptible && Body.IsBeingInterrupted) ||
+                (spell.HasRecastDelay && Body.GetSkillDisabledDuration(spell) > 0))
+            {
+                return false;
+            }
+
+            target = FindTargetForDefensiveSpell(spell);
+            return target != null;
         }
 
         protected virtual GameLiving FindTargetForDefensiveSpell(Spell spell)
@@ -1179,14 +1194,14 @@ namespace DOL.AI.Brain
                 }
             }*/
 
-            ISpellHandler spellHandler = Body.castingComponent.SpellHandler;
+            SpellHandler spellHandler = Body.castingComponent.SpellHandler;
 
             // If we're currently casting 'spell' on 'target', assume it already has the effect.
             // This allows spell queuing while preventing casting on the same target more than once.
             if (spellHandler != null && spellHandler.Spell.ID == spell.ID && spellHandler.Target == target)
                 return true;
 
-            ISpellHandler queuedSpellHandler = Body.castingComponent.QueuedSpellHandler;
+            SpellHandler queuedSpellHandler = Body.castingComponent.QueuedSpellHandler;
 
             // Do the same for our queued up spell.
             // This can happen on charmed pets having two buffs that they're trying to cast on their owner.
@@ -1196,15 +1211,24 @@ namespace DOL.AI.Brain
             // May not be the right place for that, but without that check NPCs with more than one offensive or defensive proc will only buff themselves once.
             if (spell.SpellType is eSpellType.OffensiveProc or eSpellType.DefensiveProc)
             {
-                List<ECSGameSpellEffect> existingEffects = target.effectListComponent.GetSpellEffects(EffectHelper.GetEffectFromSpell(spell));
-                return existingEffects.FirstOrDefault(e => e.SpellHandler.Spell.ID == spell.ID || (spell.EffectGroup > 0 && e.SpellHandler.Spell.EffectGroup == spell.EffectGroup)) != null;
+                List<ECSGameSpellEffect> existingEffects = target.effectListComponent.GetSpellEffects(spellEffect);
+
+                foreach (ECSGameSpellEffect effect in existingEffects)
+                {
+                    if (effect.SpellHandler.Spell.ID == spell.ID || (spell.EffectGroup > 0 && effect.SpellHandler.Spell.EffectGroup == spell.EffectGroup))
+                        return true;
+                }
+
+                return false;
             }
 
             // True if the target has the effect, or the immunity effect for this effect.
             // Treat NPC immunity effects as full immunity effects.
-            return EffectListService.GetEffectOnTarget(target, spellEffect) != null || HasImmunityEffect(EffectHelper.GetImmunityEffectFromSpell(spell)) || HasImmunityEffect(EffectHelper.GetNpcImmunityEffectFromSpell(spell));
+            return EffectListService.GetEffectOnTarget(target, spellEffect) != null ||
+                HasImmunityEffect(target, EffectHelper.GetImmunityEffectFromSpell(spell)) ||
+                HasImmunityEffect(target, EffectHelper.GetNpcImmunityEffectFromSpell(spell));
 
-            bool HasImmunityEffect(eEffect immunityEffect)
+            static bool HasImmunityEffect(GameLiving target, eEffect immunityEffect)
             {
                 return immunityEffect is not eEffect.Unknown && EffectListService.GetEffectOnTarget(target, immunityEffect) != null;
             }

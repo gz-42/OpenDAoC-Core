@@ -35,7 +35,7 @@ namespace DOL.GS
     /// <summary>
     /// This class represents a player inside the game
     /// </summary>
-    public class GamePlayer : GameLiving, IGameStaticItemOwner
+    public class GamePlayer : GameLiving, IGameStaticItemOwner, IPooledList<GamePlayer>
     {
         private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -3459,17 +3459,13 @@ namespace DOL.GS
         /// <returns></returns>
         public virtual List<Tuple<SpellLine, List<Skill>>> GetAllUsableListSpells(bool update = false)
         {
-            List<Tuple<SpellLine, List<Skill>>> results = new List<Tuple<SpellLine, List<Skill>>>();
-
             if (!update)
             {
                 if (m_usableListSpells.Count > 0)
-                    results = new List<Tuple<SpellLine, List<Skill>>>(m_usableListSpells);
-
-                // return results if cache is valid.
-                if (results.Count > 0)
-                    return results;
+                    return [.. m_usableListSpells];
             }
+
+            List<Tuple<SpellLine, List<Skill>>> results = new List<Tuple<SpellLine, List<Skill>>>();
 
             // lock during all update, even if replace only take place at end...
             m_usableListSpells.FreezeWhile(innerList => {

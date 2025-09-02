@@ -131,15 +131,19 @@ namespace DOL.GS
 
         public List<ECSGameSpellEffect> GetConcentrationEffects()
         {
+            List<ECSGameSpellEffect> temp = GameLoop.GetListForTick<ECSGameSpellEffect>();
+
             lock (_concentrationEffectsLock)
             {
-                return _concentrationEffects.ToList();
+                temp.AddRange(_concentrationEffects);
             }
+
+            return temp;
         }
 
         public List<ECSGameEffect> GetEffects()
         {
-            List<ECSGameEffect> temp = new();
+            List<ECSGameEffect> temp = GameLoop.GetListForTick<ECSGameEffect>();
 
             foreach (var pair in _effects)
             {
@@ -152,12 +156,13 @@ namespace DOL.GS
                 }
             }
 
-            return temp.OrderBy(e => e.StartTick).ToList();
+            temp.Sort(static (e1, e2) => e1.StartTick.CompareTo(e2.StartTick));
+            return temp;
         }
 
         public List<ECSGameEffect> GetEffects(eEffect effectType)
         {
-            List<ECSGameEffect> temp = new();
+            List<ECSGameEffect> temp = GameLoop.GetListForTick<ECSGameEffect>();
 
             if (_effects.TryGetValue(effectType, out List<ECSGameEffect> effects))
             {
@@ -168,12 +173,13 @@ namespace DOL.GS
                 }
             }
 
-            return temp.OrderBy(e => e.StartTick).ToList();
+            temp.Sort(static (e1, e2) => e1.StartTick.CompareTo(e2.StartTick));
+            return temp;
         }
 
         public List<ECSPulseEffect> GetPulseEffects()
         {
-            List<ECSPulseEffect> temp = new();
+            List<ECSPulseEffect> temp = GameLoop.GetListForTick<ECSPulseEffect>();
 
             foreach (var pair in _effects)
             {
@@ -191,12 +197,36 @@ namespace DOL.GS
 
         public ECSGameSpellEffect GetBestDisabledSpellEffect(eEffect effectType)
         {
-            return GetSpellEffects(effectType)?.Where(x => x.IsDisabled).OrderByDescending(x => x.SpellHandler.Spell.Value).FirstOrDefault();
+            List<ECSGameSpellEffect> effects = GameLoop.GetListForTick<ECSGameSpellEffect>();
+
+            if (effects == null || effects.Count == 0)
+                return null;
+
+            ECSGameSpellEffect maxEffect = null;
+            double maxValue = double.MinValue;
+
+            for (int i = 0; i < effects.Count; i++)
+            {
+                ECSGameSpellEffect spellEffect = effects[i];
+
+                if (!spellEffect.IsDisabled)
+                    continue;
+
+                double currentValue = spellEffect.SpellHandler.Spell.Value;
+
+                if (maxEffect != null && currentValue <= maxValue)
+                    continue;
+
+                maxEffect = spellEffect;
+                maxValue = currentValue;
+            }
+
+            return maxEffect;
         }
 
         public List<ECSGameSpellEffect> GetSpellEffects()
         {
-            List<ECSGameSpellEffect> temp = new();
+            List<ECSGameSpellEffect> temp = GameLoop.GetListForTick<ECSGameSpellEffect>();
 
             foreach (var pair in _effects)
             {
@@ -209,12 +239,13 @@ namespace DOL.GS
                 }
             }
 
-            return temp.OrderBy(e => e.StartTick).ToList();
+            temp.Sort(static (e1, e2) => e1.StartTick.CompareTo(e2.StartTick));
+            return temp;
         }
 
         public List<ECSGameSpellEffect> GetSpellEffects(eEffect effectType)
         {
-            List<ECSGameSpellEffect> temp = new();
+            List<ECSGameSpellEffect> temp = GameLoop.GetListForTick<ECSGameSpellEffect>();
 
             if (_effects.TryGetValue(effectType, out List<ECSGameEffect> effects))
             {
@@ -225,12 +256,13 @@ namespace DOL.GS
                 }
             }
 
-            return temp.OrderBy(e => e.StartTick).ToList();
+            temp.Sort(static (e1, e2) => e1.StartTick.CompareTo(e2.StartTick));
+            return temp;
         }
 
         public List<ECSGameAbilityEffect> GetAbilityEffects()
         {
-            List<ECSGameAbilityEffect> temp = new();
+            List<ECSGameAbilityEffect> temp = GameLoop.GetListForTick<ECSGameAbilityEffect>();
 
             foreach (var pair in _effects)
             {
@@ -243,12 +275,13 @@ namespace DOL.GS
                 }
             }
 
-            return temp.OrderBy(e => e.StartTick).ToList();
+            temp.Sort(static (e1, e2) => e1.StartTick.CompareTo(e2.StartTick));
+            return temp;
         }
 
         public List<ECSGameAbilityEffect> GetAbilityEffects(eEffect effectType)
         {
-            List<ECSGameAbilityEffect> temp = new();
+            List<ECSGameAbilityEffect> temp = GameLoop.GetListForTick<ECSGameAbilityEffect>();
 
             if (_effects.TryGetValue(effectType, out List<ECSGameEffect> effects))
             {
@@ -259,7 +292,8 @@ namespace DOL.GS
                 }
             }
 
-            return temp.OrderBy(e => e.StartTick).ToList();
+            temp.Sort(static (e1, e2) => e1.StartTick.CompareTo(e2.StartTick));
+            return temp;
         }
 
         public ECSGameEffect TryGetEffectFromEffectId(int effectId)
@@ -576,13 +610,13 @@ namespace DOL.GS
                                     {
                                         if (!existingEffect.IsDisabled && !existingEffect.IsDisabling)
                                         {
-                                            effectsToDisable ??= new(1);
+                                            effectsToDisable ??= GameLoop.GetListForTick<ECSGameEffect>();
                                             effectsToDisable.Add(existingEffect);
                                         }
                                     }
                                     else
                                     {
-                                        effectsToStop ??= new(1);
+                                        effectsToStop ??= GameLoop.GetListForTick<ECSGameEffect>();
                                         effectsToStop.Add(existingEffect);
                                     }
                                 }
@@ -843,41 +877,47 @@ namespace DOL.GS
             if (_requestedPlayerUpdates is EffectHelper.PlayerUpdate.NONE)
                 return;
 
+            EffectHelper.PlayerUpdate requestedUpdates;
+
             lock (_playerUpdatesLock)
             {
-                if (Owner is GamePlayer playerOwner)
-                {
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.ICONS) != 0)
-                    {
-                        playerOwner.Group?.UpdateMember(playerOwner, true, false);
-                        playerOwner.Out.SendUpdateIcons(GetEffects(), ref GetLastUpdateEffectsCount());
-                    }
+                if (_requestedPlayerUpdates is EffectHelper.PlayerUpdate.NONE)
+                    return;
 
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.STATUS) != 0)
-                        playerOwner.Out.SendStatusUpdate();
-
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.STATS) != 0)
-                        playerOwner.Out.SendCharStatsUpdate();
-
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.RESISTS) != 0)
-                        playerOwner.Out.SendCharResistsUpdate();
-
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.WEAPON_ARMOR) != 0)
-                        playerOwner.Out.SendUpdateWeaponAndArmorStats();
-
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.ENCUMBERANCE) != 0)
-                        playerOwner.UpdateEncumbrance();
-
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.CONCENTRATION) != 0)
-                        playerOwner.Out.SendConcentrationList();
-                }
-                else if (Owner is GameNPC npcOwner && npcOwner.Brain is IControlledBrain npcOwnerBrain)
-                {
-                    if ((_requestedPlayerUpdates & EffectHelper.PlayerUpdate.ICONS) != 0)
-                        npcOwnerBrain.UpdatePetWindow();
-                }
-
+                requestedUpdates = _requestedPlayerUpdates;
                 _requestedPlayerUpdates = EffectHelper.PlayerUpdate.NONE;
+            }
+
+            if (Owner is GamePlayer playerOwner)
+            {
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.ICONS) != 0)
+                {
+                    playerOwner.Group?.UpdateMember(playerOwner, true, false);
+                    playerOwner.Out.SendUpdateIcons(GetEffects(), ref GetLastUpdateEffectsCount());
+                }
+
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.STATUS) != 0)
+                    playerOwner.Out.SendStatusUpdate();
+
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.STATS) != 0)
+                    playerOwner.Out.SendCharStatsUpdate();
+
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.RESISTS) != 0)
+                    playerOwner.Out.SendCharResistsUpdate();
+
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.WEAPON_ARMOR) != 0)
+                    playerOwner.Out.SendUpdateWeaponAndArmorStats();
+
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.ENCUMBERANCE) != 0)
+                    playerOwner.UpdateEncumbrance();
+
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.CONCENTRATION) != 0)
+                    playerOwner.Out.SendConcentrationList();
+            }
+            else if (Owner is GameNPC npcOwner && npcOwner.Brain is IControlledBrain npcOwnerBrain)
+            {
+                if ((requestedUpdates & EffectHelper.PlayerUpdate.ICONS) != 0)
+                    npcOwnerBrain.UpdatePetWindow();
             }
         }
 

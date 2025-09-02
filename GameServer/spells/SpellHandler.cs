@@ -2014,8 +2014,10 @@ namespace DOL.GS.Spells
 				}
 			}
 
-			foreach (GameLiving targetInList in targets)
+			for (int i = 0; i < targets.Count; i++)
 			{
+				GameLiving targetInList = targets[i];
+
 				if (CheckSpellResist(targetInList))
 					continue;
 
@@ -2439,14 +2441,14 @@ namespace DOL.GS.Spells
 					GamePlayer owner = npcTargetBrain.GetPlayerOwner();
 
 					if (owner != null)
-						this.MessageToLiving(owner, eChatType.CT_SpellResisted, "Your {0} resists the effect!", target.Name);
+						MessageToLiving(owner, $"Your {target.Name} resists the effect!", eChatType.CT_SpellResisted);
 				}
 			}
 			else
 				MessageToLiving(target, "You resist the effect!", eChatType.CT_SpellResisted);
 
 			// Deliver message to the caster as well.
-			this.MessageToCaster(eChatType.CT_SpellResisted, "{0} resists the effect!" + " (" + CalculateSpellResistChance(target).ToString("0.0") + "%)", target.GetName(0, true));
+			MessageToCaster($"{target.GetName(0, true)} resists the effect! ({CalculateSpellResistChance(target):0.0}%)", eChatType.CT_SpellResisted);
 		}
 
 		/// <summary>
