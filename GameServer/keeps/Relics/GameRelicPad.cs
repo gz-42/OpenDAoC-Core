@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using DOL.Events;
 using DOL.GS.PacketHandler;
@@ -11,6 +12,8 @@ namespace DOL.GS
 {
     public class GameRelicPad : GameStaticItem
     {
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
+
         private const int PAD_AREA_RADIUS = 250;
 
         private PadArea _area;
@@ -40,7 +43,7 @@ namespace DOL.GS
             _ => eRelicType.Invalid,
         };
 
-        public GameRelic MountedRelic { get; private set; }
+        public HashSet<GameRelic> MountedRelics { get; private set; } = new(3);
 
         public GameRelicPad() : base() { }
 
@@ -66,7 +69,7 @@ namespace DOL.GS
 
         public bool IsMountedHere(GameRelic relic)
         {
-            return MountedRelic == relic;
+            return MountedRelics.Contains(relic);
         }
 
         public static void BroadcastDiscordRelic(string message, eRealm realm, string keepName)
@@ -116,9 +119,23 @@ namespace DOL.GS
             client.SendToDiscord(discordMessage);
         }
 
-        public void MountRelic(GameRelic relic, bool returning)
+        public bool MountRelic(GameRelic relic, bool returning)
         {
-            MountedRelic = relic;
+            if (MountedRelics.Count >= 3)
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Pad {Name} is full (3 relics) {relic.Name}");
+
+                return false;
+            }
+
+            if (!MountedRelics.Add(relic))
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Relic {relic.Name} is already mounted on pad {Name} (Returning: {returning})");
+
+                return false;
+            }
 
             if (relic.CurrentCarrier != null && !returning)
             {
@@ -135,32 +152,10 @@ namespace DOL.GS
                 if (ServerProperties.Properties.DISCORD_ACTIVE && !string.IsNullOrEmpty(ServerProperties.Properties.DISCORD_RVR_WEBHOOK_ID))
                     BroadcastDiscordRelic(message, relic.CurrentCarrier.Realm, relic.Name);
 
-                BattleGroup relicBG = relic.CurrentCarrier?.TempProperties.GetProperty<BattleGroup>(BattleGroup.BATTLEGROUP_PROPERTY);
-                List<GamePlayer> targets = new();
-
-                if (relicBG != null)
+                foreach (GamePlayer player in relic.CurrentCarrier.GetPlayersInRadius(WorldMgr.VISIBILITY_DISTANCE * 5))
                 {
-                    lock (relicBG.Members)
-                    {
-                        foreach (GamePlayer bgPlayer in relicBG.Members.Keys)
-                        {
-                            if (bgPlayer.IsWithinRadius(this, WorldMgr.MAX_EXPFORKILL_DISTANCE))
-                                targets.Add(bgPlayer);
-                        }
-                    }
-                }
-                else if (relic.CurrentCarrier.Group != null)
-                {
-                    foreach (GamePlayer p in relic.CurrentCarrier.Group.GetPlayersInTheGroup())
-                        targets.Add(p);
-                }
-                else
-                    targets.Add(relic.CurrentCarrier);
-
-                foreach (GamePlayer target in targets)
-                {
-                    target.CapturedRelics++;
-                    target.Achieve(AchievementUtils.AchievementNames.Relic_Captures);
+                    if (player.Realm == relic.CurrentCarrier.Realm)
+                        player.CapturedRelics++;
                 }
 
                 relic.LastCaptureDate = DateTime.Now;
@@ -173,11 +168,22 @@ namespace DOL.GS
                 foreach (GamePlayer otherPlayer in ClientService.Instance.GetPlayers())
                     otherPlayer.Out.SendMessage($"{message}\n{message}\n{message}", eChatType.CT_Important, eChatLoc.CL_SystemWindow);
             }
+
+            relic.Realm = Realm;
+            relic.CurrentRegionID = CurrentRegionID;
+            UpdateRelicPositions();
+            return true;
         }
 
         public void RemoveRelic(GameRelic relic)
         {
-            MountedRelic = null;
+            if (!MountedRelics.Remove(relic))
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Relic {relic.Name} is not mounted on pad {Name}");
+
+                return;
+            }
 
             if (relic.CurrentCarrier != null)
             {
@@ -193,6 +199,8 @@ namespace DOL.GS
 
                 Notify(RelicPadEvent.RelicStolen, this, new RelicPadEventArgs(relic.CurrentCarrier, relic));
             }
+
+            UpdateRelicPositions();
         }
 
         public int GetEnemiesOnPad()
@@ -211,9 +219,42 @@ namespace DOL.GS
             return enemyNearby;
         }
 
-        public void RemoveRelic()
+        public void RemoveRelics()
         {
-            MountedRelic = null;
+            MountedRelics.Clear();
+        }
+
+        private void UpdateRelicPositions()
+        {
+            int count = MountedRelics.Count;
+
+            if (count == 0)
+                return;
+
+            if (count == 1)
+            {
+                GameRelic singleRelic = MountedRelics.First();
+                singleRelic.X = X;
+                singleRelic.Y = Y;
+                singleRelic.Z = Z;
+                singleRelic.Heading = Heading;
+                return;
+            }
+
+            double baseRotation = (Heading - 1024) * Math.PI / 2048.0;
+            double angleIncrement = 2 * Math.PI / count;
+            int i = 0;
+
+            foreach (GameRelic relic in MountedRelics)
+            {
+                const int Radius = 50;
+
+                double angle = baseRotation + angleIncrement * i++;
+                relic.X = (int) (X + Radius * Math.Cos(angle));
+                relic.Y = (int) (Y + Radius * Math.Sin(angle));
+                relic.Z = Z;
+                relic.Heading = (ushort) (2048 * angle / Math.PI + 3072);
+            }
         }
 
         public class PadArea : Area.Circle
