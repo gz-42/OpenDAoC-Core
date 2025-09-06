@@ -1430,11 +1430,9 @@ namespace DOL.GS.Spells
 		/// <summary>
 		/// Select all targets for this spell
 		/// </summary>
-		/// <param name="castTarget"></param>
-		/// <returns></returns>
-		public virtual IList<GameLiving> SelectTargets(GameObject castTarget)
+		public virtual List<GameLiving> SelectTargets(GameObject castTarget)
 		{
-			List<GameLiving> list = new();
+			List<GameLiving> list = GameLoop.GetListForTick<GameLiving>();
 			GameLiving target = castTarget as GameLiving;
 			eSpellTarget modifiedTarget = Spell.Target;
 			ushort modifiedRadius = (ushort) Spell.Radius;
@@ -1868,36 +1866,37 @@ namespace DOL.GS.Spells
 		public virtual void CastSubSpells(GameLiving target)
 		{
 			if (m_spell.SubSpellID > 0)
-				CastSingleSubSpell(target, m_spell.SubSpellID);
+				CastSingleSubSpell(target, m_spell);
 
 			foreach (int spellID in m_spell.MultipleSubSpells)
 			{
-				if (spellID != m_spell.SubSpellID) // Avoid duplicate casting
-					CastSingleSubSpell(target, spellID);
+				if (spellID != m_spell.SubSpellID)
+					CastSingleSubSpell(target, SkillBase.GetSpellByID(spellID));
 			}
 		}
 
-		private void CastSingleSubSpell(GameLiving target, int spellID)
+		private void CastSingleSubSpell(GameLiving target, Spell spell)
 		{
-			Spell spell = SkillBase.GetSpellByID(spellID);
+			if (target == null || spell == null || spell.SubSpellID != 0)
+				return;
 
-			if (target != null && spell != null && spell.SubSpellID == 0)
-			{
-				if (Caster is GameSummonedPet pet and not NecromancerPet)
-					pet.ScaleSpell(spell, pet.Level, Properties.PET_SCALE_SPELL_MAX_LEVEL);
+			if (Caster is GameSummonedPet pet and not NecromancerPet)
+				pet.ScaleSpell(spell, pet.Level, Properties.PET_SCALE_SPELL_MAX_LEVEL);
 
-				ISpellHandler spellHandler = ScriptMgr.CreateSpellHandler(m_caster, spell, SkillBase.GetSpellLine(GlobalSpellsLines.Reserved_Spells));
-				spellHandler.StartSpell(target);
-			}
+			ISpellHandler spellHandler = ScriptMgr.CreateSpellHandler(m_caster, spell, SkillBase.GetSpellLine(GlobalSpellsLines.Reserved_Spells));
+			spellHandler.StartSpell(target);
 		}
 
 		public virtual List<GameLiving> GetGroupAndPets(Spell spell)
 		{
-			List<GameLiving> livingsInRange = new();
-			ICollection<GameLiving> groupMembers = Caster.Group?.GetMembersInTheGroup() ?? (Caster as NecromancerPet)?.Owner.Group?.GetMembersInTheGroup();
+			List<GameLiving> livingsInRange = GameLoop.GetListForTick<GameLiving>();
+			List<GameLiving> groupMembers = Caster.Group?.GetMembersInTheGroup() ?? (Caster as NecromancerPet)?.Owner.Group?.GetMembersInTheGroup();
 
 			if (groupMembers == null)
-				groupMembers = new List<GameLiving>(){ Caster };
+			{
+				groupMembers = GameLoop.GetListForTick<GameLiving>();
+				groupMembers.Add(Caster);
+			}
 
 			foreach (GameLiving living in groupMembers)
 			{
@@ -1953,12 +1952,6 @@ namespace DOL.GS.Spells
 				if (Spell.IsFocus && (!Target.IsAlive || !Caster.IsWithinRadius(Target, Spell.CalculateEffectiveRange(Caster))))
 				{
 					CancelFocusSpells();
-					return false;
-				}
-
-				if (HasPositiveEffect && Target is GamePlayer p && Caster is GamePlayer c && Target != Caster && p.NoHelp)
-				{
-					c.Out.SendMessage(Target.Name + " has chosen to walk the path of solitude, and your spell fails.", eChatType.CT_SpellResisted, eChatLoc.CL_SystemWindow);
 					return false;
 				}
 			}
