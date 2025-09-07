@@ -4665,9 +4665,15 @@ namespace DOL.GS
             set
             {
                 int oldLevel = Level;
-                base.Level = value;
+
+                // `base.Level` ends up having to call the getter (in `SendLivingDataUpdate`).
+                // Which, in the case of `GamePlayer`, accesses `DBCharacter`.
+                // For this reason, `DBCharacter.Level` must be set first.
                 if (DBCharacter != null)
                     DBCharacter.Level = value;
+
+                base.Level = value;
+
                 if (oldLevel > 0)
                 {
                     if (value > oldLevel)
@@ -6247,12 +6253,7 @@ namespace DOL.GS
             IsSwimming = false;
 
             if (HCFlag)
-            {
-                DbCoreCharacter cha = DOLDB<DbCoreCharacter>.SelectObject(DB.Column("Name").IsEqualTo(Name));
-                if (cha == null) return;
-                Client.Out.SendPlayerQuit(true);
-                GameServer.Database.DeleteObject(cha);
-            }
+                HardCoreLogin.HandleDeath(this);
         }
 
         public override void EnemyKilled(GameLiving enemy)
