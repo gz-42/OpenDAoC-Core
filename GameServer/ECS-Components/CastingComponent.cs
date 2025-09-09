@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using DOL.AI.Brain;
 using DOL.Events;
-using DOL.GS.Commands;
 using DOL.GS.PacketHandler;
 using DOL.GS.Spells;
 using DOL.Language;
@@ -64,14 +63,10 @@ namespace DOL.GS
 
         public virtual bool RequestCastSpell(Spell spell, SpellLine spellLine, ISpellCastingAbilityHandler spellCastingAbilityHandler = null, GameLiving target = null)
         {
-            if (!RequestCastSpellInternal(spell, spellLine, spellCastingAbilityHandler, target))
-                return false;
-
-            ServiceObjectStore.Add(this);
-            return true;
+            return RequestCastSpellInternal(spell, spellLine, spellCastingAbilityHandler, target);
         }
 
-        protected bool RequestCastSpellInternal(Spell spell, SpellLine spellLine, ISpellCastingAbilityHandler spellCastingAbilityHandler = null, GameLiving target = null)
+        protected bool RequestCastSpellInternal(Spell spell, SpellLine spellLine, ISpellCastingAbilityHandler spellCastingAbilityHandler = null, GameLiving target = null, GamePlayer losChecker = null)
         {
             if (Owner.IsIncapacitated)
                 Owner.Notify(GameLivingEvent.CastFailed, this, new CastFailedEventArgs(null, CastFailedEventArgs.Reasons.CrowdControlled));
@@ -84,14 +79,15 @@ namespace DOL.GS
                 if (!_castSpellRequestPool.TryDequeue(out CastSpellRequest request))
                     request = new();
 
-                request.Init(this, spell, spellLine, spellCastingAbilityHandler, target);
+                request.Init(this, spell, spellLine, spellCastingAbilityHandler, target, losChecker);
                 _startSkillRequests.Enqueue(request);
             }
 
+            ServiceObjectStore.Add(this);
             return true;
         }
 
-        public virtual void RequestUseAbility(Ability ability)
+        public void RequestUseAbility(Ability ability)
         {
             // Always allowed. The handler will check if the ability can be used or not.
             lock (_startSkillRequestsLock)
@@ -181,8 +177,7 @@ namespace DOL.GS
                 {
                     if (currentSpell.CastTime > 0)
                     {
-                        if (!Owner.attackComponent.AttackState)
-                            necroBrain.CheckAttackSpellQueue();
+                        necroBrain.CheckAttackSpellQueue();
 
                         if (QueuedSpellHandler != null)
                         {
@@ -234,14 +229,16 @@ namespace DOL.GS
             public SpellLine SpellLine { get; private set ; }
             public ISpellCastingAbilityHandler SpellCastingAbilityHandler { get; private set; }
             public GameLiving Target { get; private set; }
+            public GamePlayer LosChecker { get; private set; } // Only used by NPCs.
 
-            public void Init(CastingComponent castingComponent, Spell spell, SpellLine spellLine, ISpellCastingAbilityHandler spellCastingAbilityHandler, GameLiving target)
+            public void Init(CastingComponent castingComponent, Spell spell, SpellLine spellLine, ISpellCastingAbilityHandler spellCastingAbilityHandler, GameLiving target, GamePlayer losChecker)
             {
                 Init(castingComponent);
                 Spell = spell;
                 SpellLine = spellLine;
                 SpellCastingAbilityHandler = spellCastingAbilityHandler;
                 Target = target;
+                LosChecker = losChecker;
             }
 
             public override void ResetAndReturn()
@@ -250,6 +247,7 @@ namespace DOL.GS
                 SpellLine = null;
                 SpellCastingAbilityHandler = null;
                 Target = null;
+                LosChecker = null;
                 CastingComponent.ReturnToPool(this);
                 base.ResetAndReturn();
             }
@@ -317,11 +315,8 @@ namespace DOL.GS
                 {
                     SpellHandler spellHandler = ScriptMgr.CreateSpellHandler(CastingComponent.Owner, Spell, SpellLine) as SpellHandler;
 
-                    // Pre-initialize 'SpellHandler.Target' with the passed down target, if there's any.
-                    if (Target != null)
-                        spellHandler.Target = Target;
-
-                    // Abilities that cast spells (i.e. Realm Abilities such as Volcanic Pillar) need to set this so the associated ability gets disabled if the cast is successful.
+                    spellHandler.Target = Target;
+                    spellHandler.LosChecker = LosChecker;
                     spellHandler.Ability = SpellCastingAbilityHandler;
                     return spellHandler;
                 }
@@ -407,25 +402,6 @@ namespace DOL.GS
             }
 
             public virtual void StartSkill() { }
-        }
-
-        public class ChainedSpell : ChainedAction<Func<Spell, SpellLine, ISpellCastingAbilityHandler, GameLiving, bool>>
-        {
-            public SpellLine _spellLine;
-
-            public Spell Spell { get; private set; }
-            public override Skill Skill => Spell;
-
-            public ChainedSpell(GamePlayer player, Spell spell, SpellLine spellLine) : base(player.castingComponent.RequestCastSpellInternal)
-            {
-                Spell = spell;
-                _spellLine = spellLine;
-            }
-
-            public override void Execute()
-            {
-                Handler.Invoke(Spell, _spellLine, null, null);
-            }
         }
     }
 }

@@ -404,8 +404,7 @@ namespace DOL.GS.Spells
 				case eSpellTarget.PET:
 				{
 					// Get the current target if we don't have one already.
-					if (Target == null)
-						Target = Caster?.TargetObject as GameLiving;
+					Target ??= Caster.TargetObject as GameLiving;
 
 					// Pet spells are automatically casted on the controlled NPC, but only if the current target isn't a subpet or a turret.
 					if (((Target as GameNPC)?.Brain as IControlledBrain)?.GetPlayerOwner() != Caster && Caster.ControlledBrain?.Body != null)
@@ -416,23 +415,21 @@ namespace DOL.GS.Spells
 				default:
 				{
 					// Get the current target if we don't have one already.
-					if (Target == null)
-						Target = Caster?.TargetObject as GameLiving;
-
-					if (Target == null && Caster is NecromancerPet nPet)
-						Target = (nPet.Brain as NecromancerPetBrain).GetSpellTarget();
-
+					Target ??= Caster.TargetObject as GameLiving;
 					break;
 				}
 			}
 
 			// Initial LoS state.
-			// Note: This may be wrong for players. This is the LoS state for the currently selected target, not necessarily for the one the spell will be casted on.
-			HasLos = Caster.TargetInView;
-
-			if (Caster is GameNPC npcOwner)
+			if (playerCaster != null)
 			{
-				// Reset for LoS checks during cast.
+				// This may be wrong. This is the LoS state at the time the player used the spell, not necessarily for the target the spell is being cast on, assuming it can change.
+				// It should be fine since it's updated at the same time as `TargetObject`, and the spell handler doesn't receive a target explicitly. But it needs more testing.
+				HasLos = Caster.TargetInView;
+			}
+			else if (Caster is GameNPC npcOwner)
+			{
+				// NPCs initial LoS checks are handled by the casting component before ticking the spell handler.
 				HasLos = true;
 
 				if (!Spell.IsInstantCast)
@@ -797,21 +794,13 @@ namespace DOL.GS.Spells
 		private void CheckPlayerLosDuringCastCallback(GamePlayer player, LosCheckResponse response, ushort sourceOID, ushort targetOID)
 		{
 			HasLos = response is LosCheckResponse.True;
-
-			if (!HasLos && Properties.CHECK_LOS_DURING_CAST_INTERRUPT)
-			{
-				if (IsInCastingPhase)
-					MessageToCaster("You can't see your target from here!", eChatType.CT_SpellResisted);
-
-				InterruptCasting(false);
-			}
 		}
 
-		private void CheckPetLosDuringCastCallback(GameLiving living, LosCheckResponse response, ushort sourceOID, ushort targetOID)
+		private void CheckNpcLosDuringCastCallback(GameLiving living, LosCheckResponse response, ushort sourceOID, ushort targetOID)
 		{
 			HasLos = response is LosCheckResponse.True;
 
-			if (!HasLos && Properties.CHECK_LOS_DURING_CAST_INTERRUPT)
+			if (!HasLos)
 				InterruptCasting(false);
 		}
 
@@ -1003,9 +992,8 @@ namespace DOL.GS.Spells
 
 				if (m_spell.Target is not eSpellTarget.SELF and not eSpellTarget.GROUP and not eSpellTarget.CONE and not eSpellTarget.PET && m_spell.Range > 0)
 				{
-
-					if (Caster is GameNPC npc && npc.Brain is IControlledBrain npcBrain)
-						npcBrain.GetPlayerOwner()?.Out.SendCheckLos(npc, target, CheckPetLosDuringCastCallback);
+					if (Caster is GameNPC npc)
+						LosChecker?.Out.SendCheckLos(npc, target, CheckNpcLosDuringCastCallback);
 					else if (Caster is GamePlayer player)
 						player.Out.SendCheckLos(player, target, CheckPlayerLosDuringCastCallback);
 				}
@@ -1021,7 +1009,6 @@ namespace DOL.GS.Spells
 
 		#endregion
 
-		//This is called after our pre-cast checks are done (Range, valid target, mana pre-req, and standing still?) and checks for the casting states
 		public void Tick()
 		{
 			switch (CastState)
@@ -2564,6 +2551,8 @@ namespace DOL.GS.Spells
 		{
 			get { return m_caster; }
 		}
+
+		public GamePlayer LosChecker { get; set; }
 
 		/// <summary>
 		/// Is the spell being cast?

@@ -667,9 +667,6 @@ namespace DOL.GS.ServerProperties
 		[ServerProperty("world", "check_los_during_cast", "Should we perform LoS checks during spell casts.", true)]
 		public static bool CHECK_LOS_DURING_CAST;
 
-		[ServerProperty("world", "check_los_during_cast_interrupt", "Should the casting animation be interrupted if a during cast LoS check fails.", false)]
-		public static bool CHECK_LOS_DURING_CAST_INTERRUPT;
-
 		[ServerProperty("world", "check_los_during_cast_minimum_interval", "The minimum interval (milliseconds) between two LoS checks performed during a spell cast.", 200)]
 		public static int CHECK_LOS_DURING_CAST_MINIMUM_INTERVAL;
 
@@ -2567,9 +2564,6 @@ namespace DOL.GS.ServerProperties
 
 		[ServerProperty("controls_automation", "allow_non_anytime_backup_styles", "If /backupstyle is enabled, can players set a non-anytime style as their backup?", false)] 
 		public static bool ALLOW_NON_ANYTIME_BACKUP_STYLES;
-
-		[ServerProperty("controls_automation", "allow_chained_actions", "Allow players to chain actions with /chainactions. They will be executed consecutively.", false)] 
-		public static bool ALLOW_CHAINED_ACTIONS;
 
 		#endregion
 
