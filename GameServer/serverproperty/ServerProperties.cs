@@ -271,7 +271,7 @@ namespace DOL.GS.ServerProperties
 		[ServerProperty("system", "use_npcguildscripts", "Use the NPC Guild Scripts", true)]
 		public static bool USE_NPCGUILDSCRIPTS;
 
-		[ServerProperty("system", "game_loop_tick_rate", "Minimum amount of milliseconds that must pass since the current tick started before starting the next one. Higher values reduce CPU usage but make the game less responsive.", 30)]
+		[ServerProperty("system", "game_loop_tick_rate", "How many ticks per second the game loop tries to run at. If it can't keep up, the logic will effectively run slower than intended.", 30)]
 		public static int GAME_LOOP_TICK_RATE;
 
 		#endregion
@@ -1222,7 +1222,7 @@ namespace DOL.GS.ServerProperties
 		/// <summary>
 		/// How often, in milliseconds, to check follow distance.  Lower numbers make NPC follow closer but increase load on server.
 		/// </summary>
-		[ServerProperty("npc", "gamenpc_followcheck_time", "How often, in milliseconds, to check follow distance. Lower numbers make NPC follow closer but increase load on server.", 500)]
+		[ServerProperty("npc", "gamenpc_followcheck_time", "How often, in milliseconds, to check follow distance. Lower numbers make NPC follow closer but increase load on server.", 100)]
 		public static int GAMENPC_FOLLOWCHECK_TIME;
 
 		/// <summary>
@@ -1236,12 +1236,6 @@ namespace DOL.GS.ServerProperties
 		/// </summary>
 		[ServerProperty("npc", "gamenpc_chances_to_style", "Change the chance to fire a style for a mob or a pet", 20)]
 		public static int GAMENPC_CHANCES_TO_STYLE;
-
-		/// <summary>
-		/// Chances for npc (including pet) to cast (chance is calculated randomly according to this value + the number of spells the NPC own)
-		/// </summary>
-		[ServerProperty("npc", "gamenpc_chances_to_cast", "Change the chance to cast a spell for a mob or a pet", 25)]
-		public static int GAMENPC_CHANCES_TO_CAST;
 
 		/// <summary>
 		/// NPCs heal when a target is below what percentage of their health?
@@ -1270,11 +1264,6 @@ namespace DOL.GS.ServerProperties
 		#endregion
 
 		#region PVP / RVR
-		/// <summary>
-		/// Grace period in minutes to allow relog near enemy structure after link death
-		/// </summary>
-		[ServerProperty("pvp", "RvRLinkDeathRelogGracePeriod", "The Grace Period in minutes, to allow to relog near enemy structure after a link death.", "20")]
-		public static string RVR_LINK_DEATH_RELOG_GRACE_PERIOD;
 
 		/// <summary>
 		/// PvP Immunity Timer - Killed by Mobs
@@ -1616,12 +1605,6 @@ namespace DOL.GS.ServerProperties
 		/// </summary>
 		[ServerProperty("keeps", "pvp_unclaimed_keeps_enemy", "Are unclaimed keeps considered the enemy in PvP mode?", false)]
 		public static bool PVP_UNCLAIMED_KEEPS_ENEMY;
-
-		/// <summary>
-		/// Should players that log near enemy keeps be teleported to a safe area when logging in?
-		/// </summary>
-		[ServerProperty("keeps", "teleport_login_near_enemy_keep", "Should players that log near enemy keeps be teleported to a safe area?", true)]
-		public static bool TELEPORT_LOGIN_NEAR_ENEMY_KEEP;
 
 		/// <summary>
 		/// Should players that exceed BG level cap be moved out of BG when logging in?
