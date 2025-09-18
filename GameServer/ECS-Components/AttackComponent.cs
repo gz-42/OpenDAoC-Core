@@ -1536,24 +1536,13 @@ namespace DOL.GS
                 guardChance += source.GetAbilityLevel(Abilities.Guard) * 0.05; // 5% additional chance to guard with each Guard level.
                 guardChance *= 1 - ad.DefensePenetration;
 
-                if (guardChance > Properties.BLOCK_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
-                    guardChance = Properties.BLOCK_CAP;
-
-                int shieldSize = 1; // Guard isn't affected by shield size or attacker count.
-
-                if (leftHand != null)
-                    shieldSize = Math.Max(leftHand.Type_Damage, 1);
-
-                // Possibly intended to be applied in RvR only.
-                if (shieldSize == 1 && guardChance > 0.8)
-                    guardChance = 0.8;
-                else if (shieldSize == 2 && guardChance > 0.9)
-                    guardChance = 0.9;
-                else if (shieldSize == 3 && guardChance > 0.99)
-                    guardChance = 0.99;
+                // Guard isn't affected by shield size or attacker count.
 
                 if (ad.AttackType is AttackData.eAttackType.MeleeDualWield)
                     guardChance *= ad.Attacker.DualWieldDefensePenetrationFactor;
+
+                if (guardChance > Properties.BLOCK_CAP && ad.Attacker is GamePlayer && ad.Target is GamePlayer)
+                    guardChance = Properties.BLOCK_CAP;
 
                 if (guardChance > 0)
                 {
@@ -2169,12 +2158,13 @@ namespace DOL.GS
                     int level = owner.GetAbilityLevel(Abilities.Berserk);
                     // https://web.archive.org/web/20061017095337/http://daoc.catacombs.com/forum.cfm?ThreadKey=10833&DefMessage=922046&forum=37
                     // 1% min is weird. Raised to 10%.
+                    // https://web.archive.org/web/20041101133819/http://www.camelotherald.com/more/720.php
                     // Berserk 1 = 10-25%
                     // Berserk 2 = 10-50%
                     // Berserk 3 = 10-75%
-                    // Berserk 4 = 10-99%
+                    // Berserk 4 = 10-100%
                     critMin = (int) (ad.Damage * 0.1);
-                    critMax = (int) (Math.Min(0.99, level * 0.25) * ad.Damage);
+                    critMax = (int) (Math.Min(1, level * 0.25) * ad.Damage);
                 }
                 else
                 {
