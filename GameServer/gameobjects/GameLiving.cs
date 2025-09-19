@@ -209,14 +209,6 @@ namespace DOL.GS
 			return new GameSummonedPet(template);
 		}
 
-		/// <summary>
-		/// A new pet has been summoned, do we do anything?
-		/// </summary>
-		/// <param name="pet"></param>
-		public virtual void OnPetSummoned(GameSummonedPet pet)
-		{
-		}
-
 		public virtual long LastAttackTickPvE { get; set; }
 		public virtual long LastAttackTickPvP { get; set; }
 		public virtual long LastAttackedByEnemyTickPvE { get; set; }
@@ -2407,23 +2399,25 @@ namespace DOL.GS
 			eProperty.Resist_Matter,
 			eProperty.Resist_Spirit
 		};
+
 		/// <summary>
 		/// gets the resistance value by damage type, refer to eDamageType for constants
 		/// </summary>
 		/// <param name="damageType"></param>
 		/// <returns></returns>
-		public virtual eProperty GetResistTypeForDamage(eDamageType damageType)
+		public static eProperty GetResistTypeForDamage(eDamageType damageType)
 		{
-			if ((int)damageType < m_damageTypeToResistBonusConversion.Length)
-			{
+			if ((int) damageType < m_damageTypeToResistBonusConversion.Length)
 				return m_damageTypeToResistBonusConversion[(int)damageType];
-			}
 			else
 			{
-				log.ErrorFormat("No resist found for damage type {0} on living {1}!", (int)damageType, Name);
+				if (log.IsErrorEnabled)
+					log.ErrorFormat($"No resist found for damage type {damageType}");
+
 				return 0;
 			}
 		}
+
 		/// <summary>
 		/// gets the resistance value by damage types
 		/// </summary>

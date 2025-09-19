@@ -6,12 +6,13 @@ using DOL.Events;
 using DOL.GS.Effects;
 using DOL.GS.PacketHandler;
 using DOL.Language;
+using DOL.Logging;
 
 namespace DOL.GS.Spells
 {
     public abstract class BaseProcSpellHandler : SpellHandler
     {
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logger log = LoggerManager.Create(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         protected readonly SpellLine _buffSpellLine;
         protected readonly Spell _procSpell;
@@ -23,6 +24,10 @@ namespace DOL.GS.Spells
         {
             _buffSpellLine = spellLine;
             _procSpell = SkillBase.GetSpellByID((int) spell.Value);
+
+            // Scale the proc here, since it cannot be scaled on NPC initialization.
+            if (caster is GameNPC npc)
+                _procSpell = npc.GetScaledSpell(_procSpell);
         }
 
         public override ECSGameSpellEffect CreateECSEffect(in ECSGameEffectInitParams initParams)
@@ -179,6 +184,16 @@ namespace DOL.GS.Spells
     [SpellHandler(eSpellType.OffensiveProc)]
     public class OffensiveProcSpellHandler : BaseProcSpellHandler
     {
+        public override string ShortDescription
+        {
+            get
+            {
+                ISpellHandler subSpell = ScriptMgr.CreateSpellHandler(m_caster, SkillBase.GetSpellByID((int)Spell.Value), null);
+                return $"Triggers the following spell with a {Spell.Frequency / 100}% chance on own melee attacks:\n\n" +
+                    (subSpell != null ? subSpell.ShortDescription : $"Spell with ID {Spell.Value} not found.");
+            }
+        }
+
         protected override DOLEvent EventType => GameLivingEvent.AttackFinished;
 
         public OffensiveProcSpellHandler(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) { }
@@ -198,8 +213,6 @@ namespace DOL.GS.Spells
 
                 if (handler != null)
                 {
-                    handler.Spell.Level = Spell.Level;
-
                     switch (_procSpell.Target)
                     {
                         case eSpellTarget.ENEMY:
@@ -222,6 +235,16 @@ namespace DOL.GS.Spells
     public class DefensiveProcSpellHandler : BaseProcSpellHandler
     {
         protected override DOLEvent EventType => GameLivingEvent.AttackedByEnemy;
+
+        public override string ShortDescription
+        {
+            get
+            {
+                ISpellHandler subSpell = ScriptMgr.CreateSpellHandler(m_caster, SkillBase.GetSpellByID((int)Spell.Value), null);
+                return $"Triggers the following spell with a {Spell.Frequency / 100}% chance when being hit by melee attacks:\n\n" +
+                    (subSpell != null ? subSpell.ShortDescription : $"Spell with ID {Spell.Value} not found.");
+            }
+        }
 
         public DefensiveProcSpellHandler(GameLiving caster, Spell spell, SpellLine line) : base(caster, spell, line) { }
 
