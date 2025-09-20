@@ -844,7 +844,7 @@ namespace DOL.AI.Brain
 			}
 
 			GameLiving target = CalculateNextAttackTarget();
-			
+
 			if (target != null)
 			{
 				if (!Body.IsAttacking || target != Body.TargetObject)
