@@ -26,6 +26,7 @@ using DOL.GS.Spells;
 using DOL.GS.Styles;
 using DOL.GS.Utils;
 using DOL.Language;
+using DOL.Logging;
 using JNogueira.Discord.Webhook.Client;
 
 namespace DOL.GS
@@ -35,7 +36,7 @@ namespace DOL.GS
     /// </summary>
     public class GamePlayer : GameLiving, IGameStaticItemOwner, IPooledList<GamePlayer>
     {
-        private static readonly Logging.Logger log = Logging.LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly Logger log = LoggerManager.Create(MethodBase.GetCurrentMethod().DeclaringType);
 
         private const int SECONDS_TO_QUIT_ON_LINKDEATH = 60;
 
@@ -46,6 +47,7 @@ namespace DOL.GS
         public override eGameObjectType GameObjectType => eGameObjectType.PLAYER;
         public double SpecLock { get; set; }
         public long NextWorldUpdate { get; set; }
+        public Lock AwardLock { get; private set; } = new(); // Used by `AbstractServerRules` exclusively.
 
         public ECSGameTimer PredatorTimeoutTimer
         {
@@ -8105,16 +8107,7 @@ namespace DOL.GS
                     DismountSteed(true);
             }
 
-            bool movePet = false;
-
-            if (ControlledBrain != null && ControlledBrain.WalkState != eWalkState.Stay)
-            {
-                if (CharacterClass.ID is not ((int) eCharacterClass.Theurgist) and not ((int) eCharacterClass.Animist))
-                    movePet = true;
-            }
-
             CurrentSpeed = 0;
-            Point3D originalPoint = new(X, Y, Z);
             X = x;
             Y = y;
             Z = z;
@@ -8126,46 +8119,33 @@ namespace DOL.GS
             {
                 CurrentRegionID = regionID;
                 Out.SendRegionChanged();
-            }
-            else
-            {
-                Out.SendPlayerJump(false);
-                UpdateEquipmentAppearance();
-
-                if (IsUnderwater)
-                    IsDiving = true;
-
-                if (movePet)
-                {
-                    Point2D point = GetPointFromHeading(Heading, 64);
-                    IControlledBrain npc = ControlledBrain;
-
-                    if (npc != null)
-                    {
-                        GameNPC petBody = npc.Body;
-                        petBody.MoveInRegion(CurrentRegionID, point.X, point.Y, Z + 10, (ushort)((Heading + 2048) % 4096), false);
-
-                        if (petBody != null && petBody.ControlledNpcList != null)
-                        {
-                            foreach (IControlledBrain controlledBrain in petBody.ControlledNpcList)
-                            {
-                                if (controlledBrain != null && controlledBrain.Body != null)
-                                {
-                                    GameNPC petBody2 = controlledBrain.Body;
-
-                                    if (petBody2 != null && originalPoint.IsWithinRadius(petBody2, 500))
-                                        petBody2.MoveInRegion(CurrentRegionID, point.X, point.Y, Z + 10, (ushort)((Heading + 2048) % 4096), false);
-                                }
-                            }
-                        }
-                    }
-                }
+                return true;
             }
 
+            Out.SendPlayerJump(false);
+            UpdateEquipmentAppearance();
+
+            if (IsUnderwater)
+                IsDiving = true;
+
+            if (ControlledBrain == null)
+                return true;
+
+            Point2D point = GetPointFromHeading(Heading, 64);
+            IControlledBrain petBrain = ControlledBrain;
+
+            if (petBrain == null)
+                return true;
+
+            GameNPC pet = petBrain.Body;
+
+            if (pet.MaxSpeedBase <= 0)
+                return true;
+
+            pet.MoveInRegion(CurrentRegionID, point.X, point.Y, Z + 10, (ushort) ((Heading + 2048) % 4096), false);
             return true;
         }
 
-        //Eden - Move to bind, and check if the loc is allowed
         public virtual bool MoveToBind()
         {
             if (!GameServer.ServerRules.IsAllowedToMoveToBind(this))
@@ -8966,7 +8946,12 @@ namespace DOL.GS
         {
             get
             {
-                double result = Strength;
+                // Patch 1.62
+                // Strength (and strength only) debuffs and disease spells should no longer reduce a player's encumbrance below their unbuffed maximum.
+                // Debuffers were using the fact that you could reduce an enemy to 0 movement speed as an effective one minute total snare with no counter,
+                // which was not the intention of strength debuff spells.
+
+                double result = Math.Max(GetModified(eProperty.Strength), GetModifiedBase(eProperty.Strength));
                 RAPropertyEnhancer lifter = GetAbility<AtlasOF_LifterAbility>();
 
                 if (lifter != null)

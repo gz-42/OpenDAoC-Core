@@ -1046,7 +1046,12 @@ namespace DOL.GS.ServerRules
             foreach (var pair in playerCountAndDamage)
             {
                 GamePlayer player = pair.Key;
-                AwardPlayerOnNpcKill(player, totalDamage, killedNpc, playerCountAndDamage, groupCountAndDamage, battlegroupCountAndDamage);
+
+                lock (player.AwardLock)
+                {
+                    AwardPlayerOnNpcKill(player, totalDamage, killedNpc, playerCountAndDamage, groupCountAndDamage, battlegroupCountAndDamage);
+                }
+
                 killedNpc.Faction?.OnMemberKilled(player);
             }
 
@@ -1605,7 +1610,14 @@ namespace DOL.GS.ServerRules
 
             // Let `AwardExperience` fetch players that are in a group but didn't attack the target, and decide how things should be shared.
             foreach (var pair in playerCountAndDamage)
-                AwardPlayerOnPlayerKill(pair.Key, killer, totalDamage, killedPlayer, playerCountAndDamage, groupCountAndDamage, out isWorthAnything);
+            {
+                GamePlayer player = pair.Key;
+
+                lock (player.AwardLock)
+                {
+                    AwardPlayerOnPlayerKill(pair.Key, killer, totalDamage, killedPlayer, playerCountAndDamage, groupCountAndDamage, out isWorthAnything);
+                }
+            }
 
             ProcessKilledPlayerStats();
 
@@ -2368,7 +2380,7 @@ namespace DOL.GS.ServerRules
                 }
                 case eMerchantWindowType.HousingDeedMenu:
                 {
-                    player.Out.SendMerchantWindow(/* TODO */HouseTemplateMgr.OutdoorMenuItems, eMerchantWindowType.HousingDeedMenu);
+                    player.Out.SendMerchantWindow(new MerchantTradeItems(GameServer.ServerRules.GetLotMarkerListName(player.CurrentRegionID)), merchantType);
                     break;
                 }
                 default:
@@ -2387,67 +2399,98 @@ namespace DOL.GS.ServerRules
         /// Buys an item off a housing merchant.  If the list has been customized then this must be modified to
         /// match that customized list.
         /// </summary>
-        /// <param name="player"></param>
-        /// <param name="slot"></param>
-        /// <param name="count"></param>
-        /// <param name="merchantType"></param>
-        public virtual void BuyHousingItem(GamePlayer player, ushort slot, byte count, DOL.GS.PacketHandler.eMerchantWindowType merchantType)
+        public virtual void BuyHousingItem(GamePlayer player, ushort slot, byte count, eMerchantWindowType merchantType)
         {
             MerchantTradeItems items = null;
 
             switch (merchantType)
             {
                 case eMerchantWindowType.HousingInsideShop:
+                {
                     items = HouseTemplateMgr.IndoorShopItems;
                     break;
+                }
                 case eMerchantWindowType.HousingOutsideShop:
+                {
                     items = HouseTemplateMgr.OutdoorShopItems;
                     break;
+                }
                 case eMerchantWindowType.HousingBindstoneHookpoint:
+                {
                     switch (player.Realm)
                     {
                         case eRealm.Albion:
+                        {
                             items = HouseTemplateMgr.IndoorBindstoneShopItemsAlb;
                             break;
+                        }
                         case eRealm.Hibernia:
+                        {
                             items = HouseTemplateMgr.IndoorBindstoneShopItemsHib;
                             break;
+                        }
                         case eRealm.Midgard:
+                        {
                             items = HouseTemplateMgr.IndoorBindstoneShopItemsMid;
                             break;
+                        }
                         default:
+                        {
                             items = HouseTemplateMgr.IndoorBindstoneShopItems;
                             break;
+                        }
                     }
+
                     break;
+                }
                 case eMerchantWindowType.HousingCraftingHookpoint:
+                {
                     items = HouseTemplateMgr.IndoorCraftShopItems;
                     break;
+                }
                 case eMerchantWindowType.HousingNPCHookpoint:
+                {
                     items = HouseTemplateMgr.GetNpcShopItems(player);
                     break;
+                }
                 case eMerchantWindowType.HousingVaultHookpoint:
+                {
                     switch (player.Realm)
                     {
                         case eRealm.Albion:
+                        {
                             items = HouseTemplateMgr.IndoorVaultShopItemsAlb;
                             break;
+                        }
                         case eRealm.Hibernia:
+                        {
                             items = HouseTemplateMgr.IndoorVaultShopItemsHib;
                             break;
+                        }
                         case eRealm.Midgard:
+                        {
                             items = HouseTemplateMgr.IndoorVaultShopItemsMid;
                             break;
+                        }
                         default:
+                        {
                             items = HouseTemplateMgr.IndoorVaultShopItems;
                             break;
+                        }
                     }
+
                     break;
+                }
+                case eMerchantWindowType.HousingDeedMenu:
+                {
+                    items = new MerchantTradeItems(GameServer.ServerRules.GetLotMarkerListName(player.CurrentRegionID));
+                    break;
+                }
             }
 
-            GameMerchant.OnPlayerBuy(player, slot, count, items);
+            if (items != null)
+                GameMerchant.OnPlayerBuy(player, slot, count, items);
         }
-
 
         /// <summary>
         /// Get a housing hookpoint NPC
