@@ -9,6 +9,7 @@ using DOL.Database;
 using DOL.GS.Effects;
 using DOL.GS.Housing;
 using DOL.GS.Keeps;
+using DOL.GS.PacketHandler.Client.v168;
 using DOL.GS.PlayerTitles;
 using DOL.GS.Quests;
 using DOL.GS.RealmAbilities;
@@ -1359,6 +1360,8 @@ namespace DOL.GS.PacketHandler
 				pak.WriteByte(0x00);
 				SendTCP(pak);
 			}
+
+			m_gameClient.Player.TempProperties.SetProperty(DialogResponseHandler.GROUP_INVITE_KEY, invitingPlayer.Name);
 		}
 
 		public virtual void SendGuildInviteCommand(GamePlayer invitingPlayer, string inviteMessage)
@@ -1367,7 +1370,7 @@ namespace DOL.GS.PacketHandler
 			{
 				pak.WriteByte(0x00);
 				pak.WriteByte(0x03);
-				pak.WriteShort(invitingPlayer.ObjectID); //data1
+				pak.WriteShort(invitingPlayer.Client.SessionID); //data1
 				pak.Fill(0x00, 6); //data2&data3
 				pak.WriteByte(0x01);
 				pak.WriteByte(0x00);
@@ -1376,6 +1379,8 @@ namespace DOL.GS.PacketHandler
 				pak.WriteByte(0x00);
 				SendTCP(pak);
 			}
+
+			m_gameClient.Player.TempProperties.SetProperty(DialogResponseHandler.GUILD_INVITE_KEY, invitingPlayer.Name);
 		}
 
 		public virtual void SendGuildLeaveCommand(GamePlayer invitingPlayer, string inviteMessage)
