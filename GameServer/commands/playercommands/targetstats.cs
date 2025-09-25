@@ -2,10 +2,11 @@
 using System.Collections.Generic;
 using DOL.Database;
 using DOL.GS.PacketHandler;
+using static DOL.GS.NpcTemplateMgr;
 
 namespace DOL.GS.Commands
 {
-    [CmdAttribute("&targetstats",
+    [Cmd("&targetstats",
         ePrivLevel.Player,
         "Display various combat related info about your target",
         "/targetstats")]
@@ -219,8 +220,19 @@ namespace DOL.GS.Commands
                 info.Add("+ Miscellaneous:");
                 info.Add($"Level:  {target.Level}");
                 info.Add($"Health:  {target.Health} / {target.MaxHealth}");
-                info.Add($"Power:  {target.Mana} / {target.MaxMana}");
+
+                if (target is GamePlayer)
+                    info.Add($"Power:  {target.Mana} / {target.MaxMana}");
+
                 info.Add($"Movement speed:  {target.movementComponent.CurrentSpeed} / {target.movementComponent.MaxSpeed}");
+
+                if (target is GameNPC npc)
+                {
+                    eBodyType bodyType = (eBodyType) npc.BodyType;
+
+                    if (bodyType is not eBodyType.None)
+                        info.Add($"Type:  {bodyType}");
+                }
             }
         }
     }

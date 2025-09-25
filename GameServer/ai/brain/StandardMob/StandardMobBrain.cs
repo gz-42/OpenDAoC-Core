@@ -360,13 +360,23 @@ namespace DOL.AI.Brain
                 if (!AggroList.ContainsKey(pet))
                     AggroList.TryAdd(pet, new(0));
 
-                if (pet.ControlledNpcList == null)
+                IControlledBrain[] controlledBrains = pet.ControlledNpcList;
+
+                if (controlledBrains == null)
                     return;
 
-                foreach (GameNPC subpet in pet.ControlledNpcList)
+                foreach (IControlledBrain subPetBrain in controlledBrains)
                 {
-                    if (!AggroList.ContainsKey(subpet))
-                        AggroList.TryAdd(subpet, new(0));
+                    if (subPetBrain == null)
+                        continue;
+
+                    GameNPC subPet = subPetBrain.Body;
+
+                    if (subPet == null)
+                        continue;
+
+                    if (!AggroList.ContainsKey(subPet))
+                        AggroList.TryAdd(subPet, new(0));
                 }
             }
 
