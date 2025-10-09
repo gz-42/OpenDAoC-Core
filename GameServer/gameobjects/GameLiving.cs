@@ -796,11 +796,11 @@ namespace DOL.GS
             }
 
             // Proc #1
-            if (procSpell != null && Util.ChanceDouble(procChance))
+            if (procSpell != null && Chance(RandomDeckEvent.OffensiveProcChance, procChance))
                 StartWeaponMagicalEffect(weapon, ad, SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects), weapon.ProcSpellID, false);
 
             // Proc #2
-            if (procSpell1 != null && Util.ChanceDouble(procChance))
+            if (procSpell1 != null && Chance(RandomDeckEvent.OffensiveProcChance, procChance))
                 StartWeaponMagicalEffect(weapon, ad, SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects), weapon.ProcSpellID1, false);
 
 			// Poison
@@ -822,7 +822,7 @@ namespace DOL.GS
 				{
 					GamePlayer PlayerAttacker = ad.Attacker as GamePlayer;
 					if (PlayerAttacker.GetSpellLine("Spymaster") != null)
-						if (Util.ChanceDouble((double)(15 * 0.0001))) return;
+						if (Util.Chance((double)(15 * 0.0001))) return;
 				}
 				weapon.PoisonCharges--;
 				if (weapon.PoisonCharges <= 0) { weapon.PoisonMaxCharges = 0; weapon.PoisonSpellID = 0; }
@@ -893,10 +893,10 @@ namespace DOL.GS
 			int chance = armor.ProcChance > 0 ? armor.ProcChance : 10;
 			SpellLine spellLine = SkillBase.GetSpellLine(GlobalSpellsLines.Item_Effects);
 
-			if (armor.ProcSpellID != 0 && Util.Chance(chance))
+			if (armor.ProcSpellID != 0 && Chance(RandomDeckEvent.DefensiveProcChance, chance))
 				StartArmorMagicalEffect(armor, ad.Attacker, SkillBase.FindSpell(armor.ProcSpellID, spellLine), spellLine);
 
-			if (armor.ProcSpellID1 != 0 && Util.Chance(chance))
+			if (armor.ProcSpellID1 != 0 && Chance(RandomDeckEvent.DefensiveProcChance, chance))
 				StartArmorMagicalEffect(armor, ad.Attacker, SkillBase.FindSpell(armor.ProcSpellID1, spellLine), spellLine);
 		}
 
@@ -1790,11 +1790,9 @@ namespace DOL.GS
 				foreach (ECSGameSpellEffect effect in effects)
 				{
 					// Ignore Whip of Encouragement; Tracker, Chaser, Pursuer Enhancement.
+					// Relying on the `Spell.Target` property to identify these.
 					if (effect.SpellHandler.Spell.Target is eSpellTarget.PET)
-					{
-						if (effect.SpellHandler.Spell.ID is 305 or (>= 895 and <= 897))
-							continue;
-					}
+						continue;
 
 					if (ShouldBeCancelled(attackData, effect))
 						effect.Stop();
