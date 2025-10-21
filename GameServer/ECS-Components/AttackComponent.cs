@@ -713,12 +713,6 @@ namespace DOL.GS
             GameNPC npc = owner as GameNPC;
             npc.FireAmbientSentence(GameNPC.eAmbientTrigger.fighting, _startAttackTarget);
 
-            if (npc.Brain is IControlledBrain brain)
-            {
-                if (brain.AggressionState is eAggressionState.Passive)
-                    return;
-            }
-
             // NPCs aren't allowed to prepare their ranged attack while moving or out of range.
             // If we have a running `AttackAction`, let it decide what to do. Not every NPC should start following their target and this allows us to react faster.
             if (npc.ActiveWeaponSlot is eActiveWeaponSlot.Distance)
@@ -2380,12 +2374,12 @@ namespace DOL.GS
 
         public double CalculateLeftAxeModifier()
         {
-            int LeftAxeSpec = owner.GetModifiedSpecLevel(Specs.Left_Axe);
+            int leftAxeSpec = owner.GetModifiedSpecLevel(Specs.Left_Axe);
 
-            if (LeftAxeSpec == 0)
+            if (leftAxeSpec == 0)
                 return 1.0;
 
-            double modifier = 0.625 + 0.0034 * LeftAxeSpec;
+            double modifier = 0.625 + 0.0034 * leftAxeSpec;
 
             if (owner.GetModified(eProperty.OffhandDamageAndChance) > 0)
                 return modifier + owner.GetModified(eProperty.OffhandDamageAndChance) * 0.01;
