@@ -141,10 +141,15 @@ namespace DOL.GS
         /// <summary>
         /// List of items in the consignment merchants Inventory.
         /// </summary>
-        public virtual IList<DbInventoryItem> GetDbItems(GamePlayer player)
+        public virtual IEnumerable<DbInventoryItem> GetDbItems(GamePlayer player)
         {
             House house = HouseMgr.GetHouse(CurrentRegionID, HouseNumber);
-            return house == null ? null : MarketCache.Items.Where(item => item?.OwnerID == house?.OwnerID).ToList();
+
+            if (house == null)
+                return null;
+
+            ItemQuery query = new() { Owner = house.OwnerID };
+            return MarketCache.SearchItems(query);
         }
 
         /// <summary>
@@ -286,7 +291,8 @@ namespace DOL.GS
             if (ServerProperties.Properties.MARKET_ENABLE_LOG)
                 log.Debug($"CM: {player.Name}:{player.Client.Account.Name} adding '{item.Name}' to consignment merchant on lot {HouseNumber}.");
 
-            return MarketCache.AddItem(item);
+            // The item is added to the market cache when its price is set.
+            return true;
         }
 
         public virtual bool OnRemoveItem(GamePlayer player, DbInventoryItem item, int previousSlot)
@@ -296,7 +302,8 @@ namespace DOL.GS
 
             item.OwnerLot = 0;
             item.SellPrice = 0;
-            return MarketCache.RemoveItem(item);
+            MarketCache.RemoveItem(item);
+            return true;
         }
 
         public virtual bool OnMoveItem(GamePlayer player, DbInventoryItem firstItem, int previousFirstSlot, DbInventoryItem secondItem, int previousSecondSlot)
@@ -326,7 +333,12 @@ namespace DOL.GS
 
             if (item.IsTradable)
             {
+                int previousSellPrice = item.SellPrice;
                 item.SellPrice = (int) price;
+
+                if (previousSellPrice <= 0)
+                    MarketCache.AddItem(item);
+
                 ChatUtil.SendDebugMessage(player, $"{item.Name} SellPrice={price} OwnerLot={item.OwnerLot} OwnerID={item.OwnerID}");
                 player.Out.SendMessage("Price set!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
             }
@@ -538,8 +550,6 @@ namespace DOL.GS
         {
             if (!base.Interact(player))
                 return false;
-
-            CheckInventory();
 
             if (player.ActiveInventoryObject != null)
             {
