@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -19,10 +20,10 @@ namespace DOL.GS
 
         // Active effects.
         private readonly Dictionary<eEffect, List<ECSGameEffect>> _effects = new();  // Dictionary of effects by their type.
-        protected readonly Lock _effectsLock = new();                                // Lock for synchronizing access to the effect list.
+        protected readonly Lock _effectsLock = new();
 
         // Pending effects.
-        private readonly Queue<PendingEffect> _effectsToStartOrStop = new();         // Queue for effects to start or stop after their state has been finalized.
+        private readonly ConcurrentQueue<PendingEffect> _pendingEffects = new();     // Queue for effects to be added, started, removed, stopped.
 
         // Concentration.
         private readonly List<ECSGameSpellEffect> _concentrationEffects = new(20);   // List of concentration effects currently active on the player.
@@ -48,16 +49,12 @@ namespace DOL.GS
 
         public virtual void Tick()
         {
-            // Only process up to `Count` in case `Process` adds to `_effectsToStartOrStop`
-            int count = _effectsToStartOrStop.Count;
+            // This can cause an infinite loop if an effect keeps adding new effects during processing.
+            // It's however important for immunity effects to be started immediately and not leave a gap.
+            while (_pendingEffects.TryDequeue(out PendingEffect pendingEffect))
+                pendingEffect.Process();
 
-            for (int i = 0; i < count; i++)
-            {
-                if (_effectsToStartOrStop.TryDequeue(out PendingEffect pendingEffect))
-                    pendingEffect.Process();
-            }
-
-            if (_effects.Count == 0 && _effectsToStartOrStop.Count == 0)
+            if (_effects.Count == 0 && _pendingEffects.Count == 0)
             {
                 ServiceObjectStore.Remove(this);
                 return;
@@ -123,7 +120,7 @@ namespace DOL.GS
                 if (index < 0 || index >= _concentrationEffects.Count)
                     return;
 
-                _concentrationEffects[index].Stop(playerCancelled);
+                _concentrationEffects[index].End(playerCancelled);
             }
         }
 
@@ -132,7 +129,7 @@ namespace DOL.GS
             lock (_concentrationEffectsLock)
             {
                 for (int i = _concentrationEffects.Count - 1; i >= 0; i--)
-                    _concentrationEffects[i].Stop(playerCancelled);
+                    _concentrationEffects[i].End(playerCancelled);
             }
         }
 
@@ -341,7 +338,7 @@ namespace DOL.GS
         public void CancelAll()
         {
             foreach (ECSGameEffect effect in GetEffects())
-                effect.Stop();
+                effect.End();
         }
 
         public void CancelIncompatiblePulseEffects(ISpellHandler spellHandler)
@@ -351,7 +348,7 @@ namespace DOL.GS
                 IEnumerable<ECSPulseEffect> otherPulseEffects = GetPulseEffects().Where(x => !PulseSpellGroupsIgnoringOtherPulseSpells.Contains(x.SpellHandler.Spell.Group));
 
                 foreach (ECSPulseEffect otherPulseEffect in otherPulseEffects)
-                    otherPulseEffect.Stop();
+                    otherPulseEffect.End();
             }
         }
 
@@ -364,10 +361,14 @@ namespace DOL.GS
 
         public void ProcessEffect(ECSGameEffect effect)
         {
-            lock (_effectsLock)
-            {
-                ProcessEffectInternal(effect);
-            }
+            ServiceObjectStore.Add(this);
+
+            if (effect.IsStarting || effect.IsEnabling)
+                _pendingEffects.Enqueue(new(effect, true));
+            else if (effect.IsEnding || effect.IsDisabling)
+                _pendingEffects.Enqueue(new(effect, false));
+            else if (log.IsErrorEnabled)
+                log.Error($"Effect was added to the queue but is neither starting nor stopping: {effect.Name} ({effect.EffectType}) on {Owner}");
         }
 
         public void HandleConcentrationEffectRangeCheck(ECSGameSpellEffect spellEffect)
@@ -435,93 +436,172 @@ namespace DOL.GS
             // Only used by players.
         }
 
-        private void ProcessEffectInternal(ECSGameEffect effect)
+        private AddEffectResult AddOrEnableEffectInternal(ECSGameEffect effect)
         {
-            ServiceObjectStore.Add(this);
-
-            if (effect.IsStarting || effect.IsEnabling)
-                AddOrEnableEffect(effect);
-            else if (effect.IsStopping || effect.IsDisabling)
-                RemoveOrDisableEffect(effect);
-            else if (log.IsErrorEnabled)
-                log.Error($"Effect was added to the queue but is neither starting nor stopping: {effect.Name} ({effect.EffectType}) on {Owner}");
-        }
-
-        private void AddOrEnableEffect(ECSGameEffect effect)
-        {
-            AddEffectResult result = AddEffectInternal(effect);
-
-            if (result is not AddEffectResult.Failed)
-                OnEffectAddedOrEnabled(effect);
-            else
-                OnEffectNotAdded(effect);
-
-            AddEffectResult AddEffectInternal(ECSGameEffect effect)
+            try
             {
-                try
+                List<ECSGameEffect> existingEffects;
+
+                // Special handling for ability effects. They don't have a spell handler, and there's not much to validate.
+                if (effect is ECSGameAbilityEffect abilityEffect)
                 {
-                    List<ECSGameEffect> existingEffects;
-
-                    // Special handling for ability effects. They don't have a spell handler, and there's not much to validate.
-                    if (effect is ECSGameAbilityEffect abilityEffect)
+                    if (_effects.TryGetValue(effect.EffectType, out existingEffects))
                     {
-                        if (_effects.TryGetValue(effect.EffectType, out existingEffects))
+                        foreach (ECSGameEffect existingEffect in existingEffects)
                         {
-                            foreach (ECSGameEffect existingEffect in existingEffects)
-                            {
-                                if (existingEffect is not ECSGameAbilityEffect existingAbilityEffect)
-                                    continue;
+                            if (existingEffect is not ECSGameAbilityEffect existingAbilityEffect)
+                                continue;
 
-                                // Guard, Intercept, and Protect use the names of both the source and the target.
-                                // We currently allow two players to mutually benefit from these abilities.
-                                if (existingAbilityEffect.Name != effect.Name)
-                                    continue;
+                            // Guard, Intercept, and Protect use the names of both the source and the target.
+                            // We currently allow two players to mutually benefit from these abilities.
+                            if (existingAbilityEffect.Name != effect.Name)
+                                continue;
 
-                                existingAbilityEffect.ExpireTick = abilityEffect.ExpireTick;
-                                return existingAbilityEffect.IsActive ? AddEffectResult.RenewedActive : AddEffectResult.RenewedDisabled;
-                            }
-
-                            existingEffects.Add(abilityEffect);
+                            existingAbilityEffect.ExpireTick = abilityEffect.ExpireTick;
+                            return existingAbilityEffect.IsActive ? AddEffectResult.RenewedActive : AddEffectResult.RenewedDisabled;
                         }
-                        else
-                            _effects.TryAdd(effect.EffectType, [effect]);
 
-                        SetEffectIdToEffect(effect);
-                        return AddEffectResult.Added;
+                        existingEffects.Add(abilityEffect);
                     }
-
-                    // Cancel any incompatible pulse effect.
-                    if (effect is ECSPulseEffect pulseEffect)
-                        CancelIncompatiblePulseEffects(pulseEffect.SpellHandler);
-
-                    // Completely new effect.
-                    if (!_effects.TryGetValue(effect.EffectType, out existingEffects))
-                    {
-                        if (!HandleConcentration(effect as ECSGameSpellEffect))
-                            return AddEffectResult.Failed;
-
+                    else
                         _effects.TryAdd(effect.EffectType, [effect]);
 
-                        if (effect.EffectType is not eEffect.Pulse && effect.Icon != 0)
-                            SetEffectIdToEffect(effect);
+                    SetEffectIdToEffect(effect);
+                    return AddEffectResult.Added;
+                }
 
-                        return AddEffectResult.Added;
+                // Cancel any incompatible pulse effect.
+                if (effect is ECSPulseEffect pulseEffect)
+                    CancelIncompatiblePulseEffects(pulseEffect.SpellHandler);
+
+                // Completely new effect.
+                if (!_effects.TryGetValue(effect.EffectType, out existingEffects))
+                {
+                    if (!HandleConcentration(effect as ECSGameSpellEffect))
+                        return AddEffectResult.Failed;
+
+                    _effects.TryAdd(effect.EffectType, [effect]);
+
+                    if (effect.EffectType is not eEffect.Pulse && effect.Icon != 0)
+                        SetEffectIdToEffect(effect);
+
+                    return AddEffectResult.Added;
+                }
+
+                // Always add immunity effects. NPC ones are started at the same time as the crowd control effect.
+                // Since they share spell IDs, the code below would cause issues.
+                if (effect is ECSImmunityEffect)
+                    return AddEffectResult.Added;
+
+                ISpellHandler newSpellHandler = effect.SpellHandler;
+                Spell newSpell = newSpellHandler.Spell;
+
+                // First block handles effects with the same spell ID as an already present effect.
+                // Second block handles effects with a different spell ID.
+                if (existingEffects.Any(e => e.SpellHandler.Spell.ID == newSpell.ID))
+                {
+                    if (effect.IsConcentrationEffect() && !effect.IsEnabling)
+                        return AddEffectResult.Failed;
+
+                    for (int i = 0; i < existingEffects.Count; i++)
+                    {
+                        ECSGameEffect existingEffect = existingEffects[i];
+                        ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
+                        Spell existingSpell = existingSpellHandler.Spell;
+
+                        if ((existingSpell.IsPulsing && effect.SpellHandler.Caster.ActivePulseSpells.ContainsKey(effect.SpellHandler.Spell.SpellType) && existingSpell.ID == newSpell.ID)
+                            || (existingSpell.IsConcentration && existingEffect == effect)
+                            || existingSpell.ID == newSpell.ID)
+                        {
+                            AddEffectResult result;
+
+                            // How effects are refreshed is very badly implemented. New instances are created every time and we need to use them.
+                            // Most of the time, we want to stop the current effect and let the new one be started normally but silently.
+                            // Not calling `OnStopEffect` on the current effect and `OnStartEffect` on the new effect means some initialization may not be performed.
+                            // To give some examples:
+                            // * Effectiveness changes from resurrection illness expiring.
+                            // * Champion debuffs being forced to spec debuffs in `OnStartEffect`.
+                            // This doesn't work will pulsing charm spells, and it's probably safer to exclude every pulsing spell for now.
+                            // This should also ignore effects being re-enabled.
+                            // For those, we replace the instance directly, both in our list and in `ServiceObjectStore`.
+                            if (!existingEffect.IsDisabled && !effect.IsEnabling && !newSpell.IsPulsing)
+                            {
+                                existingEffect.IsBeingReplaced = true;
+
+                                // Abort the process if anything doesn't work as expected. This should be logged.
+                                if (!existingEffect.End(false))
+                                {
+                                    existingEffect.IsBeingReplaced = false;
+                                    return AddEffectResult.Failed;
+                                }
+
+                                effect.IsBeingReplaced = true;
+                                existingEffects.Add(effect);
+                                result = AddEffectResult.Added;
+                            }
+                            else
+                            {
+                                ServiceObjectStore.Remove(existingEffect);
+                                existingEffect.IsBeingReplaced = true; // Will be checked by the parent pulse effect so that it doesn't call `Stop` on it.
+                                ServiceObjectStore.Add(effect);
+                                existingEffects[i] = effect;
+                                result = existingEffect.IsActive ? AddEffectResult.RenewedActive : AddEffectResult.RenewedDisabled;
+                            }
+
+                            _effects.TryAdd(effect.EffectType, existingEffects);
+                            SetEffectIdToEffect(effect);
+                            return result;
+                        }
                     }
 
-                    // Always add immunity effects. NPC ones are started at the same time as the crowd control effect.
-                    // Since they share spell IDs, the code below would cause issues.
-                    if (effect is ECSImmunityEffect)
-                        return AddEffectResult.Added;
+                    return AddEffectResult.Added;
+                }
+                else
+                {
+                    AddEffectResult result = AddEffectResult.None;
 
-                    ISpellHandler newSpellHandler = effect.SpellHandler;
-                    Spell newSpell = newSpellHandler.Spell;
-
-                    // First block handles effects with the same spell ID as an already present effect.
-                    // Second block handles effects with a different spell ID.
-                    if (existingEffects.Any(e => e.SpellHandler.Spell.ID == newSpell.ID))
+                    if (effect.EffectType is eEffect.Bladeturn)
                     {
-                        if (effect.IsConcentrationEffect() && !effect.IsEnabling)
-                            return AddEffectResult.Failed;
+                        // PBT should only replace itself.
+                        // Self cast BTs should never be overwritten.
+                        for (int i = 0; i < existingEffects.Count; i++)
+                        {
+                            ECSGameEffect existingEffect = existingEffects[i];
+                            ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
+                            Spell existingSpell = existingSpellHandler.Spell;
+
+                            if (newSpell.IsPulsing || existingSpell.Target is eSpellTarget.SELF)
+                                continue;
+
+                            existingEffect.End();
+                            result = AddEffectResult.Added;
+                        }
+                    }
+                    else if (effect.EffectType is eEffect.AblativeArmor)
+                    {
+                        // Special handling for ablative effects.
+                        // We use the remaining amount instead of the spell value. They also can't be added as disabled effects.
+                        for (int i = 0; i < existingEffects.Count; i++)
+                        {
+                            if (existingEffects[i] is not AblativeArmorECSGameEffect existingEffect)
+                                continue;
+
+                            ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
+                            Spell existingSpell = existingSpellHandler.Spell;
+
+                            // 'Damage' represents the absorption% per hit.
+                            if (newSpell.Value * AblativeArmorSpellHandler.ValidateSpellDamage((int) newSpell.Damage) <= existingEffect.RemainingValue * AblativeArmorSpellHandler.ValidateSpellDamage((int) existingSpell.Damage))
+                                continue;
+
+                            existingEffect.End();
+                            result = AddEffectResult.Added;
+                        }
+                    }
+                    else
+                    {
+                        bool addNewEffectAsDisabled = false;
+                        List<ECSGameEffect> effectsToDisable = null;
+                        List<ECSGameEffect> effectsToStop = null;
 
                         for (int i = 0; i < existingEffects.Count; i++)
                         {
@@ -529,331 +609,158 @@ namespace DOL.GS
                             ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
                             Spell existingSpell = existingSpellHandler.Spell;
 
-                            if ((existingSpell.IsPulsing && effect.SpellHandler.Caster.ActivePulseSpells.ContainsKey(effect.SpellHandler.Spell.SpellType) && existingSpell.ID == newSpell.ID)
-                                || (existingSpell.IsConcentration && existingEffect == effect)
-                                || existingSpell.ID == newSpell.ID)
-                            {
-                                AddEffectResult result;
+                            // Check if the existing and new effects are compatible.
+                            if (!existingSpellHandler.HasConflictingEffectWith(effect.SpellHandler))
+                                continue;
 
-                                // How effects are refreshed is very badly implemented. New instances are created every time and we need to use them.
-                                // Most of the time, we want to stop the current effect and let the new one be started normally but silently.
-                                // Not calling `OnStopEffect` on the current effect and `OnStartEffect` on the new effect means some initialization may not be performed.
-                                // To give some examples:
-                                // * Effectiveness changes from resurrection illness expiring.
-                                // * Champion debuffs being forced to spec debuffs in `OnStartEffect`.
-                                // This doesn't work will pulsing charm spells, and it's probably safer to exclude every pulsing spell for now.
-                                // This should also ignore effects being re-enabled.
-                                // For those, we replace the instance directly, both in our list and in `ServiceObjectStore`.
-                                if (!existingEffect.IsDisabled && !effect.IsEnabling && !newSpell.IsPulsing)
+                            if (effect.IsBetterThan(existingEffect))
+                            {
+                                if (CanCoexist(effect, existingEffect))
                                 {
-                                    existingEffect.IsBeingReplaced = true;
-
-                                    // Abort the process if anything doesn't work as expected. This should be logged.
-                                    if (!existingEffect.Stop(false))
+                                    if (!existingEffect.IsDisabled && !existingEffect.IsDisabling)
                                     {
-                                        existingEffect.IsBeingReplaced = false;
-                                        return AddEffectResult.Failed;
-                                    }
-
-                                    effect.IsBeingReplaced = true;
-                                    existingEffects.Add(effect);
-                                    result = AddEffectResult.Added;
-                                }
-                                else
-                                {
-                                    ServiceObjectStore.Remove(existingEffect);
-                                    existingEffect.IsBeingReplaced = true; // Will be checked by the parent pulse effect so that it doesn't call `Stop` on it.
-                                    ServiceObjectStore.Add(effect);
-                                    effect.PreviousPosition = GetEffects().IndexOf(existingEffect);
-                                    existingEffects[i] = effect;
-                                    result = existingEffect.IsActive ? AddEffectResult.RenewedActive : AddEffectResult.RenewedDisabled;
-                                }
-
-                                _effects.TryAdd(effect.EffectType, existingEffects);
-                                SetEffectIdToEffect(effect);
-                                return result;
-                            }
-                        }
-
-                        return AddEffectResult.Added;
-                    }
-                    else
-                    {
-                        AddEffectResult result = AddEffectResult.None;
-
-                        if (effect.EffectType is eEffect.Bladeturn)
-                        {
-                            // PBT should only replace itself.
-                            // Self cast BTs should never be overwritten.
-                            for (int i = 0; i < existingEffects.Count; i++)
-                            {
-                                ECSGameEffect existingEffect = existingEffects[i];
-                                ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
-                                Spell existingSpell = existingSpellHandler.Spell;
-
-                                if (newSpell.IsPulsing || existingSpell.Target is eSpellTarget.SELF)
-                                    continue;
-
-                                existingEffect.Stop();
-                                result = AddEffectResult.Added;
-                            }
-                        }
-                        else if (effect.EffectType is eEffect.AblativeArmor)
-                        {
-                            // Special handling for ablative effects.
-                            // We use the remaining amount instead of the spell value. They also can't be added as disabled effects.
-                            for (int i = 0; i < existingEffects.Count; i++)
-                            {
-                                if (existingEffects[i] is not AblativeArmorECSGameEffect existingEffect)
-                                    continue;
-
-                                ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
-                                Spell existingSpell = existingSpellHandler.Spell;
-
-                                // 'Damage' represents the absorption% per hit.
-                                if (newSpell.Value * AblativeArmorSpellHandler.ValidateSpellDamage((int) newSpell.Damage) <= existingEffect.RemainingValue * AblativeArmorSpellHandler.ValidateSpellDamage((int) existingSpell.Damage))
-                                    continue;
-
-                                existingEffect.Stop();
-                                result = AddEffectResult.Added;
-                            }
-                        }
-                        else
-                        {
-                            bool addNewEffectAsDisabled = false;
-                            List<ECSGameEffect> effectsToDisable = null;
-                            List<ECSGameEffect> effectsToStop = null;
-
-                            for (int i = 0; i < existingEffects.Count; i++)
-                            {
-                                ECSGameEffect existingEffect = existingEffects[i];
-                                ISpellHandler existingSpellHandler = existingEffect.SpellHandler;
-                                Spell existingSpell = existingSpellHandler.Spell;
-
-                                // Check if the existing and new effects are compatible.
-                                if (!existingSpellHandler.HasConflictingEffectWith(effect.SpellHandler))
-                                    continue;
-
-                                if (effect.IsBetterThan(existingEffect))
-                                {
-                                    if (CanCoexist(effect, existingEffect))
-                                    {
-                                        if (!existingEffect.IsDisabled && !existingEffect.IsDisabling)
-                                        {
-                                            effectsToDisable ??= GameLoop.GetListForTick<ECSGameEffect>();
-                                            effectsToDisable.Add(existingEffect);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        effectsToStop ??= GameLoop.GetListForTick<ECSGameEffect>();
-                                        effectsToStop.Add(existingEffect);
+                                        effectsToDisable ??= GameLoop.GetListForTick<ECSGameEffect>();
+                                        effectsToDisable.Add(existingEffect);
                                     }
                                 }
                                 else
                                 {
-                                    if (CanCoexist(effect, existingEffect))
-                                    {
-                                        if (!existingEffect.IsDisabled)
-                                            addNewEffectAsDisabled = true;
-                                    }
-                                    else
-                                        return AddEffectResult.Failed;
+                                    effectsToStop ??= GameLoop.GetListForTick<ECSGameEffect>();
+                                    effectsToStop.Add(existingEffect);
                                 }
                             }
-
-                            // We know for sure the effect will be added. We can now disable and stop weaker effects.
-
-                            if (effectsToDisable != null)
+                            else
                             {
-                                foreach (ECSGameEffect effectToDisable in effectsToDisable)
-                                    effectToDisable.Disable();
+                                if (CanCoexist(effect, existingEffect))
+                                {
+                                    if (!existingEffect.IsDisabled)
+                                        addNewEffectAsDisabled = true;
+                                }
+                                else
+                                    return AddEffectResult.Failed;
                             }
-
-                            if (effectsToStop != null)
-                            {
-                                foreach (ECSGameEffect effectToStop in effectsToStop)
-                                    effectToStop.Stop();
-                            }
-
-                            result = addNewEffectAsDisabled ? AddEffectResult.Disabled : AddEffectResult.Added;
                         }
 
-                        if (result is AddEffectResult.None || !HandleConcentration(effect as ECSGameSpellEffect))
-                            return AddEffectResult.Failed;
+                        // We know for sure the effect will be added. We can now disable and stop weaker effects.
 
-                        existingEffects.Add(effect);
-                        _effects.TryAdd(effect.EffectType, existingEffects);
+                        if (effectsToDisable != null)
+                        {
+                            foreach (ECSGameEffect effectToDisable in effectsToDisable)
+                                effectToDisable.Disable();
+                        }
 
-                        if (effect.EffectType is not eEffect.Pulse && effect.Icon != 0)
-                            SetEffectIdToEffect(effect);
+                        if (effectsToStop != null)
+                        {
+                            foreach (ECSGameEffect effectToStop in effectsToStop)
+                                effectToStop.End();
+                        }
 
-                        return result;
+                        result = addNewEffectAsDisabled ? AddEffectResult.Disabled : AddEffectResult.Added;
                     }
+
+                    if (result is AddEffectResult.None || !HandleConcentration(effect as ECSGameSpellEffect))
+                        return AddEffectResult.Failed;
+
+                    existingEffects.Add(effect);
+                    _effects.TryAdd(effect.EffectType, existingEffects);
+
+                    if (effect.EffectType is not eEffect.Pulse && effect.Icon != 0)
+                        SetEffectIdToEffect(effect);
+
+                    return result;
                 }
-                catch (Exception e)
-                {
-                    if (log.IsErrorEnabled)
-                        log.Error($"Failed adding an effect to {effect.Owner}'s effect list", e);
+            }
+            catch (Exception e)
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Failed adding an effect to {effect.Owner}'s effect list", e);
 
-                    return AddEffectResult.Failed;
-                }
+                return AddEffectResult.Failed;
+            }
 
-                static bool CanCoexist(ECSGameEffect effectA, ECSGameEffect effectB)
-                {
-                    if (effectA == null || effectB == null)
-                        return false;
+            static bool CanCoexist(ECSGameEffect effectA, ECSGameEffect effectB)
+            {
+                if (effectA == null || effectB == null)
+                    return false;
 
-                    if (effectA.IsConcentrationEffect() && effectB.IsConcentrationEffect())
-                        return false;
+                if (effectA.IsConcentrationEffect() && effectB.IsConcentrationEffect())
+                    return false;
 
-                    if (!effectA.SpellHandler.Spell.IsHelpful || !effectB.SpellHandler.Spell.IsHelpful)
-                        return false;
+                if (!effectA.SpellHandler.Spell.IsHelpful || !effectB.SpellHandler.Spell.IsHelpful)
+                    return false;
 
-                    return effectA.SpellHandler.Caster != effectB.SpellHandler.Caster ||
-                        effectA.SpellHandler.SpellLine.KeyName is GlobalSpellsLines.Potions_Effects ||
-                        effectB.SpellHandler.SpellLine.KeyName is GlobalSpellsLines.Potions_Effects;
-                }
+                return effectA.SpellHandler.Caster != effectB.SpellHandler.Caster ||
+                    effectA.SpellHandler.SpellLine.KeyName is GlobalSpellsLines.Potions_Effects ||
+                    effectB.SpellHandler.SpellLine.KeyName is GlobalSpellsLines.Potions_Effects;
+            }
 
-                bool HandleConcentration(ECSGameSpellEffect spellEffect)
-                {
-                    if (spellEffect == null)
-                        return true;
-
-                    if (!spellEffect.ShouldBeAddedToConcentrationList() || spellEffect.IsEnabling)
-                        return true;
-
-                    ISpellHandler spellHandler = spellEffect.SpellHandler;
-
-                    if (!spellHandler.CheckConcentrationCost(false))
-                        return false;
-
-                    GameLiving caster = spellHandler.Caster;
-
-                    if (caster == null)
-                        return true;
-
-                    caster.effectListComponent.AddToConcentrationEffectList(spellEffect);
+            static bool HandleConcentration(ECSGameSpellEffect spellEffect)
+            {
+                if (spellEffect == null)
                     return true;
-                }
-            }
 
-            void OnEffectAddedOrEnabled(ECSGameEffect effect)
-            {
-                try
-                {
-                    RequestPlayerUpdate(EffectHelper.GetPlayerUpdateFromEffect(effect.EffectType));
+                if (!spellEffect.ShouldBeAddedToConcentrationList() || spellEffect.IsEnabling)
+                    return true;
 
-                    if (!effect.FinalizeState(result))
-                        return;
+                ISpellHandler spellHandler = spellEffect.SpellHandler;
 
-                    _effectsToStartOrStop.Enqueue(new(effect, true));
-                }
-                catch (Exception e)
-                {
-                    if (log.IsErrorEnabled)
-                        log.Error($"Failed processing an effect added to {effect.Owner}'s effect list", e);
-                }
-            }
+                if (!spellHandler.CheckConcentrationCost(false))
+                    return false;
 
-            static void OnEffectNotAdded(ECSGameEffect effect)
-            {
-                try
-                {
-                    if (effect is not ECSGameSpellEffect spellEffect)
-                        return;
+                GameLiving caster = spellHandler.Caster;
 
-                    // Temporarily include `BleedECSEffect` since they're set as pulsing spells in the DB, even though they should work like DoTs instead.
-                    if (spellEffect.SpellHandler.Spell.IsPulsing && spellEffect is not BleedECSEffect)
-                        return;
+                if (caster == null)
+                    return true;
 
-                    EffectHelper.SendSpellResistAnimation(spellEffect);
-                    GamePlayer playerToNotify = null;
-
-                    if (spellEffect.SpellHandler.Caster is GamePlayer playerCaster)
-                        playerToNotify = playerCaster;
-                    else if (spellEffect.SpellHandler.Caster is GameNPC npcCaster && npcCaster.Brain is IControlledBrain brain && brain.Owner is GamePlayer casterOwner)
-                        playerToNotify = casterOwner;
-
-                    if (playerToNotify != null)
-                        ChatUtil.SendResistMessage(playerToNotify, "GamePlayer.Caster.Buff.EffectAlreadyActive", spellEffect.Owner.GetName(0, true));
-                }
-                catch (Exception e)
-                {
-                    if (log.IsErrorEnabled)
-                        log.Error($"Failed processing an effect not added to {effect.Owner}'s effect list", e);
-                }
+                caster.effectListComponent.AddToConcentrationEffectList(spellEffect);
+                return true;
             }
         }
 
-        private void RemoveOrDisableEffect(ECSGameEffect effect)
+        private RemoveEffectResult RemoveOrDisableEffectInternal(ECSGameEffect effect)
         {
-            RemoveEffectResult result = RemoveOrDisableEffectInternal(effect);
-
-            if (result is not RemoveEffectResult.Failed)
-                OnEffectRemovedOrDisabled(effect);
-
-            RemoveEffectResult RemoveOrDisableEffectInternal(ECSGameEffect effect)
+            try
             {
-                try
-                {
-                    if (!_effects.TryGetValue(effect.EffectType, out List<ECSGameEffect> existingEffects))
-                        return RemoveEffectResult.Failed;
-
-                    if (effect.IsDisabling)
-                        return RemoveEffectResult.Disabled;
-
-                    if (effect.IsStopping)
-                    {
-                        existingEffects.Remove(effect);
-                        RemoveEffectIdToEffect(effect);
-
-                        if (existingEffects.Count == 0)
-                            _effects.Remove(effect.EffectType);
-
-                        HandleConcentration(effect as ECSGameSpellEffect);
-                        return RemoveEffectResult.Removed;
-                    }
-
+                if (!_effects.TryGetValue(effect.EffectType, out List<ECSGameEffect> existingEffects))
                     return RemoveEffectResult.Failed;
-                }
-                catch (Exception e)
+
+                if (effect.IsDisabling)
+                    return RemoveEffectResult.Disabled;
+
+                if (effect.IsEnding)
                 {
-                    if (log.IsErrorEnabled)
-                        log.Error($"Failed removing an effect from {effect.Owner}'s effect list", e);
+                    existingEffects.Remove(effect);
+                    RemoveEffectIdToEffect(effect);
 
-                    return RemoveEffectResult.Failed;
+                    if (existingEffects.Count == 0)
+                        _effects.Remove(effect.EffectType);
+
+                    HandleConcentration(effect as ECSGameSpellEffect);
+                    return RemoveEffectResult.Removed;
                 }
 
-                void HandleConcentration(ECSGameSpellEffect spellEffect)
-                {
-                    if (spellEffect == null)
-                        return;
+                return RemoveEffectResult.Failed;
+            }
+            catch (Exception e)
+            {
+                if (log.IsErrorEnabled)
+                    log.Error($"Failed removing an effect from {effect.Owner}'s effect list", e);
 
-                    ISpellHandler spellHandler = spellEffect.SpellHandler;
-                    GameLiving caster = spellHandler?.Caster;
-
-                    if (!spellEffect.ShouldBeRemovedFromConcentrationList() || caster == null)
-                        return;
-
-                    caster.effectListComponent.RemoveFromConcentrationEffectList(spellEffect);
-                }
+                return RemoveEffectResult.Failed;
             }
 
-            void OnEffectRemovedOrDisabled(ECSGameEffect effect)
+            static void HandleConcentration(ECSGameSpellEffect spellEffect)
             {
-                try
-                {
-                    RequestPlayerUpdate(EffectHelper.GetPlayerUpdateFromEffect(effect.EffectType));
+                if (spellEffect == null)
+                    return;
 
-                    if (effect.FinalizeState(result))
-                        _effectsToStartOrStop.Enqueue(new(effect, false));
-                }
-                catch (Exception e)
-                {
-                    if (log.IsErrorEnabled)
-                        log.Error($"Failed processing an effect removed from {effect.Owner}'s effect list", e);
-                }
+                ISpellHandler spellHandler = spellEffect.SpellHandler;
+                GameLiving caster = spellHandler?.Caster;
+
+                if (!spellEffect.ShouldBeRemovedFromConcentrationList() || caster == null)
+                    return;
+
+                caster.effectListComponent.RemoveFromConcentrationEffectList(spellEffect);
             }
         }
 
@@ -911,46 +818,129 @@ namespace DOL.GS
             public void Process()
             {
                 if (_start)
+                    TryStartEffect();
+                else
+                    TryStopEffect();
+
+                _effect.IsBeingReplaced = false; // This need to always be set to false.
+            }
+
+            public void TryStartEffect()
+            {
+                EffectListComponent component = _effect.Owner.effectListComponent;
+                AddEffectResult result = component.AddOrEnableEffectInternal(_effect);
+
+                if (result is not AddEffectResult.Failed)
+                    OnEffectAddedOrEnabled(component, result, _effect);
+                else
+                    OnEffectNotAdded(_effect);
+
+                static void OnEffectAddedOrEnabled(EffectListComponent component, AddEffectResult result, ECSGameEffect effect)
                 {
-                    _effect.OnStartEffect();
-
-                    // Animations must be sent after calling `OnStartEffect` to prevent interrupts from interfering with them.
-                    if (_effect is ECSGameSpellEffect spellEffect and not ECSImmunityEffect)
+                    try
                     {
-                        ISpellHandler spellHandler = spellEffect.SpellHandler;
-                        Spell spell = spellHandler?.Spell;
+                        if (effect.FinalizeState(result))
+                            effect.OnStartEffect();
 
-                        if (spell.IsPulsing)
+                        component.RequestPlayerUpdate(EffectHelper.GetPlayerUpdateFromEffect(effect.EffectType));
+                        ServiceObjectStore.Add(effect);
+
+                        // Animations must be sent after calling `OnStartEffect` to prevent interrupts from interfering with them.
+                        if (effect is ECSGameSpellEffect spellEffect and not ECSImmunityEffect)
                         {
-                            // This should allow the caster to see the effect of the first tick of a beneficial pulse effect, even when recasted before the existing effect expired.
-                            // It means they can spam some spells, but I consider it a good feedback for the player (example: Paladin's endurance chant).
-                            // It should also allow harmful effects to be played on the targets, but not the caster (example: Reaver's PBAEs -- the flames, not the waves).
-                            // It should prevent double animations too (only checking 'IsHarmful' and 'RenewEffect' would make resist chants play twice).
-                            if (spellEffect is ECSPulseEffect)
+                            ISpellHandler spellHandler = spellEffect.SpellHandler;
+                            Spell spell = spellHandler?.Spell;
+
+                            if (spell.IsPulsing)
                             {
-                                if (!spell.IsHarmful && spell.SpellType is not eSpellType.Charm && !spellEffect.IsEnabling)
+                                // This should allow the caster to see the effect of the first tick of a beneficial pulse effect, even when recasted before the existing effect expired.
+                                // It means they can spam some spells, but I consider it a good feedback for the player (example: Paladin's endurance chant).
+                                // It should also allow harmful effects to be played on the targets, but not the caster (example: Reaver's PBAEs -- the flames, not the waves).
+                                // It should prevent double animations too (only checking 'IsHarmful' and 'RenewEffect' would make resist chants play twice).
+                                if (spellEffect is ECSPulseEffect)
+                                {
+                                    if (!spell.IsHarmful && spell.SpellType is not eSpellType.Charm && !spellEffect.IsEnabling)
+                                        EffectHelper.SendSpellAnimation(spellEffect);
+                                }
+                                else if (spell.IsHarmful)
                                     EffectHelper.SendSpellAnimation(spellEffect);
                             }
-                            else if (spell.IsHarmful)
+                            else
                                 EffectHelper.SendSpellAnimation(spellEffect);
                         }
-                        else
-                            EffectHelper.SendSpellAnimation(spellEffect);
                     }
-                }
-                else
-                {
-                    _effect.OnStopEffect();
-
-                    if (!_effect.IsBeingReplaced)
+                    catch (Exception e)
                     {
-                        _effect.TryApplyImmunity();
-                        _effect.Owner.effectListComponent.TryEnableBestEffectOfSameType(_effect);
+                        if (log.IsErrorEnabled)
+                            log.Error($"Failed processing an effect added to {effect.Owner}'s effect list", e);
                     }
                 }
 
-                // This need to always be set to false.
-                _effect.IsBeingReplaced = false;
+                static void OnEffectNotAdded(ECSGameEffect effect)
+                {
+                    try
+                    {
+                        if (effect is not ECSGameSpellEffect spellEffect)
+                            return;
+
+                        // Temporarily include `BleedECSEffect` since they're set as pulsing spells in the DB, even though they should work like DoTs instead.
+                        if (spellEffect.SpellHandler.Spell.IsPulsing && spellEffect is not BleedECSEffect)
+                            return;
+
+                        EffectHelper.SendSpellResistAnimation(spellEffect);
+                        GamePlayer playerToNotify = null;
+
+                        if (spellEffect.SpellHandler.Caster is GamePlayer playerCaster)
+                            playerToNotify = playerCaster;
+                        else if (spellEffect.SpellHandler.Caster is GameNPC npcCaster && npcCaster.Brain is IControlledBrain brain && brain.Owner is GamePlayer casterOwner)
+                            playerToNotify = casterOwner;
+
+                        if (playerToNotify != null)
+                            ChatUtil.SendResistMessage(playerToNotify, "GamePlayer.Caster.Buff.EffectAlreadyActive", spellEffect.Owner.GetName(0, true));
+                    }
+                    catch (Exception e)
+                    {
+                        if (log.IsErrorEnabled)
+                            log.Error($"Failed processing an effect not added to {effect.Owner}'s effect list", e);
+                    }
+                }
+            }
+
+            public void TryStopEffect()
+            {
+                EffectListComponent component = _effect.Owner.effectListComponent;
+                RemoveEffectResult result = component.RemoveOrDisableEffectInternal(_effect);
+
+                if (result is not RemoveEffectResult.Failed)
+                    OnEffectRemovedOrDisabled(component, result, _effect);
+
+                static void OnEffectRemovedOrDisabled(EffectListComponent component, RemoveEffectResult result, ECSGameEffect effect)
+                {
+                    try
+                    {
+                        if (effect.FinalizeState(result))
+                        {
+                            effect.OnStopEffect();
+
+                            if (!effect.IsBeingReplaced)
+                            {
+                                effect.TryApplyImmunity();
+                                component.TryEnableBestEffectOfSameType(effect);
+                            }
+                        }
+
+                        component.RequestPlayerUpdate(EffectHelper.GetPlayerUpdateFromEffect(effect.EffectType));
+
+                        // Keep disabled effects in the store.
+                        if (!effect.IsDisabled)
+                            ServiceObjectStore.Remove(effect);
+                    }
+                    catch (Exception e)
+                    {
+                        if (log.IsErrorEnabled)
+                            log.Error($"Failed processing an effect removed from {effect.Owner}'s effect list", e);
+                    }
+                }
             }
         }
     }
