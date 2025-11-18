@@ -5775,6 +5775,19 @@ namespace DOL.GS
             return GetModified(eProperty.Strength);
         }
 
+        public int GetArmorFactorCap(eObjectType type)
+        {
+            if (!GlobalConstants.IsArmor((int) type))
+                throw new ArgumentException($"{nameof(type)} must be an armor type");
+
+            int characterLevel = Level;
+
+            if (RealmLevel > 39)
+                characterLevel++;
+
+            return type is eObjectType.Cloth ? characterLevel : characterLevel * 2;
+        }
+
         /// <summary>
         /// calculate item armor factor influenced by quality, con and duration
         /// </summary>
@@ -5788,15 +5801,10 @@ namespace DOL.GS
             if (item == null)
                 return 0;
 
-            int characterLevel = Level;
-
-            if (RealmLevel > 39)
-                characterLevel++;
-
-            int armorFactorCap = characterLevel * 2;
-            double armorFactor = Math.Min(item.DPS_AF, (eObjectType) item.Object_Type is eObjectType.Cloth ? characterLevel : armorFactorCap);
+            int armorFactorCap = GetArmorFactorCap((eObjectType) item.Object_Type);
+            double armorFactor = Math.Min(item.DPS_AF, armorFactorCap);
             armorFactor += BaseBuffBonusCategory[eProperty.ArmorFactor] / 6.0; // Base AF buffs need to be applied manually for players.
-            armorFactor *= item.Quality * 0.01 * item.Condition / item.MaxCondition; // Apply condition and quality before the second cap. Maybe incorrect, but it makes base AF buffs a little more useful.
+            armorFactor *= item.Quality * 0.01 * item.ConditionPercent * 0.01; // Apply condition and quality before the second cap. Maybe incorrect, but it makes base AF buffs a little more useful.
             armorFactor = Math.Min(armorFactor, armorFactorCap);
             armorFactor += GetModified(eProperty.ArmorFactor) / 6.0; // Don't call base here.
 
@@ -5852,30 +5860,32 @@ namespace DOL.GS
             return ApplyWeaponQualityAndConditionToDamage(weapon, WeaponDamageWithoutQualityAndCondition(weapon));
         }
 
+        public double GetWeaponDpsCap()
+        {
+            double dpsCap = 1.2 + 0.3 * Level;
+
+            if (RealmLevel > 39)
+                dpsCap += 0.3;
+
+            return dpsCap;
+        }
+
         public double WeaponDamageWithoutQualityAndCondition(DbInventoryItem weapon)
         {
             if (weapon == null)
                 return 0;
 
-            double Dps = weapon.DPS_AF;
-
             // Apply dps cap before quality and condition.
             // http://www.classesofcamelot.com/faq.asp?mode=view&cat=10
-            int dpsCap = 12 + 3 * Level;
-
-            if (RealmLevel > 39)
-                dpsCap += 3;
-
-            if (Dps > dpsCap)
-                Dps = dpsCap;
-
-            Dps *= 1 + GetModified(eProperty.DPS) * 0.01;
-            return Dps * 0.1;
+            double weaponDps = weapon.DPS_AF * 0.1;
+            double dps = Math.Min(weaponDps, GetWeaponDpsCap());
+            weaponDps *= 1 + GetModified(eProperty.DPS) * 0.01;
+            return weaponDps;
         }
 
         public static double ApplyWeaponQualityAndConditionToDamage(DbInventoryItem weapon, double damage)
         {
-            return damage * weapon.Quality * 0.01 * weapon.Condition / weapon.MaxCondition;
+            return damage * weapon.Quality * 0.01 * weapon.ConditionPercent * 0.01;
         }
 
         public override bool CanCastWhileAttacking()

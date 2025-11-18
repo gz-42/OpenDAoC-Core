@@ -141,7 +141,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 						{
 							WriteUsableClasses(objectInfo, invItem, client);
 							WriteMagicalBonuses(objectInfo, invItem, client, false);
-							WriteClassicWeaponInfos(objectInfo, invItem, client);
+                        WriteClassicWeaponInfos(objectInfo, invItem, client);
 						}
 
 						if (invItem.Object_Type >= (int)eObjectType.Cloth && invItem.Object_Type <= (int)eObjectType.Scale)
@@ -432,7 +432,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 						{
 							WriteUsableClasses(objectInfo, item, client);
 							WriteMagicalBonuses(objectInfo, item, client, false);
-							WriteClassicWeaponInfos(objectInfo, GameInventoryItem.Create(item), client);
+                        WriteClassicWeaponInfos(objectInfo, GameInventoryItem.Create(item), client);
 						}
 
 						if (item.Object_Type >= (int)eObjectType.Cloth && item.Object_Type <= (int)eObjectType.Scale)
@@ -618,7 +618,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 						{
 							WriteUsableClasses(objectInfo, invItem, client);
 							WriteMagicalBonuses(objectInfo, invItem, client, false);
-							WriteClassicWeaponInfos(objectInfo, invItem, client);
+                        WriteClassicWeaponInfos(objectInfo, invItem, client);
 						}
 
 						if (invItem.Object_Type >= (int)eObjectType.Cloth && invItem.Object_Type <= (int)eObjectType.Scale)
@@ -1144,7 +1144,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 			if ((item.Object_Type >= (int)eObjectType.GenericWeapon) && (item.Object_Type <= (int)eObjectType.MaulerStaff))
 			{
 				WriteMagicalBonuses(objectInfo, item, client, true);
-				WriteClassicWeaponInfos(objectInfo, item, client);
+                WriteClassicWeaponInfos(objectInfo, item, client);
 			}
 			if (item.Object_Type >= (int)eObjectType.Cloth && item.Object_Type <= (int)eObjectType.Scale)
 			{
@@ -1199,45 +1199,39 @@ namespace DOL.GS.PacketHandler.Client.v168
 		/// Effective Damage:
 		/// - X.X DPS
 		/// </summary>
-		public void WriteClassicWeaponInfos(IList<string> output, DbInventoryItem item, GameClient client)
+		public static void WriteClassicWeaponInfos(IList<string> output, DbInventoryItem item, GameClient client)
 		{
-			double itemDPS = item.DPS_AF / 10.0;
-			double clampedDPS = Math.Min(itemDPS, 1.2 + 0.3 * client.Player.Level);
-			double itemSPD = item.SPD_ABS / 10.0;
-			double effectiveDPS = clampedDPS * item.Quality / 100.0 * item.Condition / item.Template.MaxCondition;
+			double itemDps = item.DPS_AF * 0.1;
+			double clampedDps = Math.Min(itemDps, client.Player.GetWeaponDpsCap());
+			double itemSpd = item.SPD_ABS * 0.1;
+			double effectiveDps = clampedDps * item.Quality * 0.01 * item.ConditionPercent * 0.01;
+			string damageType = item.Type_Damage == 0 ? "None" : GlobalConstants.WeaponDamageTypeToName(item.Type_Damage);
 
 			output.Add(" ");
 			output.Add(" ");
 			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.DamageMod"));
-			if (itemDPS != 0)
+
+			if (itemDps != 0)
 			{
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.BaseDPS", itemDPS.ToString("0.0")));
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.ClampDPS", clampedDPS.ToString("0.0")));
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.BaseDPS", itemDps.ToString("0.0")));
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.ClampDPS", clampedDps.ToString("0.0")));
 			}
 
 			if (item.SPD_ABS >= 0)
-			{
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.SPD", itemSPD.ToString("0.0")));
-			}
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.SPD", itemSpd.ToString("0.0")));
 
 			if (item.Quality != 0)
-			{
 				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.Quality", item.Quality));
-			}
+
 			if (item.Condition != 0)
-			{
 				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.Condition", item.ConditionPercent));
-			}
 
-			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.DamageType",
-			                                      (item.Type_Damage == 0 ? "None" : GlobalConstants.WeaponDamageTypeToName(item.Type_Damage))));
+			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.DamageType", damageType));
 			output.Add(" ");
-
 			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.EffDamage"));
-			if (itemDPS != 0)
-			{
-				output.Add("- " + effectiveDPS.ToString("0.0") + " DPS");
-			}
+
+			if (itemDps != 0)
+				output.Add($"- {effectiveDps:0.0} DPS");
 		}
 
 		public void WriteUsableClasses(IList<string> output, DbInventoryItem item, GameClient client)
@@ -1316,45 +1310,38 @@ namespace DOL.GS.PacketHandler.Client.v168
 			output.Add(" ");
 			output.Add(" ");
 			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.ArmorMod"));
+
 			if (item.DPS_AF != 0)
 			{
 				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.BaseFactor", item.DPS_AF));
 			}
-			double AF = 0;
+
+			double armorFactor = 0;
+
 			if (item.DPS_AF != 0)
 			{
-				int afCap = client.Player.Level;
-				if (item.Object_Type != (int)eObjectType.Cloth)
-				{
-					afCap *= 2;
-				}
-
-				AF = Math.Min(afCap, item.DPS_AF);
-
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.ClampFact", (int)AF));
+				int armorFactorCap = client.Player.GetArmorFactorCap((eObjectType) item.Object_Type);
+				armorFactor = Math.Min(armorFactorCap, item.DPS_AF);
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.ClampFact", (int) armorFactor));
 			}
+
 			if (item.SPD_ABS >= 0)
-			{
 				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Absorption", item.SPD_ABS));
-			}
-			if (item.Quality != 0)
-			{
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Quality", item.Quality));
-			}
-			if (item.Condition != 0)
-			{
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Condition", 100 /*item.ConditionPercent*/));
-			}
-			output.Add(" ");
 
+			if (item.Quality != 0)
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Quality", item.Quality));
+
+			if (item.Condition != 0)
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Condition", 100 /*item.ConditionPercent*/));
+
+			output.Add(" ");
 			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.EffArmor"));
-			double EAF = 0;
+
 			if (item.DPS_AF != 0)
 			{
-				EAF = AF * item.Quality / 100.0 * item.Condition / item.MaxCondition * (1 + item.SPD_ABS / 100.0);
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Factor", (int)EAF));
+				int effectiveArmorFactor = (int) (armorFactor * item.Quality * 0.01 * item.ConditionPercent * 0.01 * (1 + item.SPD_ABS * 0.01));
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicArmorInfos.Factor", effectiveArmorFactor));
 			}
-
 		}
 
 		public void WriteMagicalBonuses(List<string> output, DbItemTemplate item, GameClient client, bool shortInfo)
