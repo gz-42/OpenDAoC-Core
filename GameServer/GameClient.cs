@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -264,6 +263,7 @@ namespace DOL.GS
                 ClientState = eClientState.Disconnected;
                 PacketProcessor?.Dispose();
                 ClientService.Instance.OnClientDisconnect(this);
+                base.OnDisconnect(); // Frees session ID. Must be done after calling `ClientService.OnClientDisconnect`.
                 GameEventMgr.Notify(GameClientEvent.Disconnected, this);
 
                 if (Account != null)

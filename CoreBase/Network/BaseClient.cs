@@ -70,7 +70,10 @@ namespace DOL.Network
             SessionId = sessionId;
         }
 
-        protected virtual void OnDisconnect() { }
+        protected virtual void OnDisconnect()
+        {
+            SessionId.Dispose();
+        }
 
         public bool SendAsync(SocketAsyncEventArgs tcpSendArgs)
         {
@@ -159,7 +162,6 @@ namespace DOL.Network
         public void Disconnect()
         {
             _receiveArgs.Dispose();
-            SessionId.Dispose();
 
             try
             {
