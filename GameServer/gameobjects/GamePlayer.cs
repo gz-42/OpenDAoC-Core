@@ -49,18 +49,6 @@ namespace DOL.GS
         public long NextWorldUpdate { get; set; }
         public Lock AwardLock { get; private set; } = new(); // Used by `AbstractServerRules` exclusively.
 
-        public ECSGameTimer PredatorTimeoutTimer
-        {
-            get
-            {
-                if (m_predatortimer == null) m_predatortimer = new ECSGameTimer(this);
-                return m_predatortimer;
-            }
-            set { m_predatortimer = value; }
-        }
-
-        protected ECSGameTimer m_predatortimer;
-
         #region Client/Character/VariousFlags
 
         /// <summary>
@@ -5094,6 +5082,8 @@ namespace DOL.GS
         #endregion
 
         #region Combat
+
+        public override bool BenefitsFromRelics => true;
 
         /// <summary>
         /// Gets/Sets safety flag
@@ -11053,7 +11043,7 @@ namespace DOL.GS
         /// <summary>
         /// Uncovers the player if a mob is too close
         /// </summary>
-        protected class UncoverStealthAction : ECSGameTimerWrapperBase
+        protected class UncoverStealthAction : ECSGameTimerWrapperBase, ILosCheckListener
         {
             /// <summary>
             /// Constructs a new uncover stealth action
@@ -11133,7 +11123,7 @@ namespace DOL.GS
                     if (Util.Chance(chanceToUncover))
                     {
                         if (canSeePlayer)
-                            player.Out.SendCheckLos(player, npc, new CheckLosResponse(player.UncoverLosHandler));
+                            player.Out.SendLosCheckRequest(player, npc, this);
                         else
                             npc.TurnTo(player, 10000);
                     }
@@ -11141,21 +11131,19 @@ namespace DOL.GS
 
                 return Interval;
             }
-        }
-        /// <summary>
-        /// This handler is called by the unstealth check of mobs
-        /// </summary>
-        public void UncoverLosHandler(GamePlayer player, LosCheckResponse response, ushort sourceOID, ushort targetOID)
-        {
-            GameObject target = CurrentRegion.GetObject(targetOID);
 
-            if (target == null || !player.IsStealthed)
-                return;
-
-            if (response is LosCheckResponse.True)
+            public void HandleLosCheckResponse(GamePlayer player, LosCheckResponse response, ushort targetId)
             {
-                player.Out.SendMessage(target.GetName(0, true) + " uncovers you!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
-                player.Stealth(false);
+                GameObject target = Owner.CurrentRegion.GetObject(targetId);
+
+                if (target == null || !player.IsStealthed)
+                    return;
+
+                if (response is LosCheckResponse.True)
+                {
+                    player.Out.SendMessage($"{target.GetName(0, true)} uncovers you!", eChatType.CT_System, eChatLoc.CL_SystemWindow);
+                    player.Stealth(false);
+                }
             }
         }
 
