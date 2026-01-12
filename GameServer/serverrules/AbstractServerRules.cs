@@ -1025,6 +1025,14 @@ namespace DOL.GS.ServerRules
 
         public virtual void OnNpcKilled(GameNPC killedNpc, GameObject killer)
         {
+            GameNPC.RewardEligibility rewardEligibility = killedNpc.RewardStatus;
+
+            if (rewardEligibility is not GameNPC.RewardEligibility.Eligible)
+            {
+                SendNotWorthRewardMessage(killedNpc, rewardEligibility);
+                return;
+            }
+
             if (!ProcessXpGainers(killedNpc,
                 out double totalDamage,
                 out Dictionary<GamePlayer, EntityCountTotalDamagePair> playerCountAndDamage,
@@ -1034,7 +1042,7 @@ namespace DOL.GS.ServerRules
                 out Dictionary<BattleGroup, EntityCountTotalDamagePair> battlegroupCountAndDamage,
                 out ItemOwnerTotalDamagePair mostDamagingBattlegroup))
             {
-                SendNotWorthRewardMessage(killedNpc);
+                SendNotWorthRewardMessage(killedNpc, GameNPC.RewardEligibility.DeniedInvalid);
                 return;
             }
 
@@ -1078,14 +1086,14 @@ namespace DOL.GS.ServerRules
                 DropLoot(killedNpc, killer, itemOwners);
             }
 
-            static void SendNotWorthRewardMessage(GameNPC killedNpc)
+            static void SendNotWorthRewardMessage(GameNPC killedNpc, GameNPC.RewardEligibility rewardEligibility)
             {
                 string message;
 
-                if (killedNpc.CurrentRegion?.Time - GameNPC.CHARMED_NOEXP_TIMEOUT >= killedNpc.TempProperties.GetProperty<long>(GameNPC.CHARMED_TICK_PROP))
-                    message = "You gain no experience from this kill!";
-                else
+                if (rewardEligibility is GameNPC.RewardEligibility.DeniedRecentlyCharmed)
                     message = "This monster has been charmed recently and is worth no experience.";
+                else
+                    message = "You gain no experience from this kill!";
 
                 foreach (var pair in killedNpc.XPGainers)
                 {
@@ -1113,9 +1121,6 @@ namespace DOL.GS.ServerRules
 
                 battlegroupCountAndDamage = null;
                 mostDamagingBattlegroup = null;
-
-                if (!killedNpc.IsWorthReward)
-                    return false;
 
                 foreach (var pair in killedNpc.XPGainers)
                 {
@@ -1867,8 +1872,6 @@ namespace DOL.GS.ServerRules
 
         private static long CalculateOutpostExperienceBonus(GamePlayer playerToAward, long baseXpReward)
         {
-            long outpostBonus = 0;
-
             //outpost XP
             //1.54 http://www.camelotherald.com/more/567.shtml
             //- Players now receive an exp bonus when fighting within 16,000
@@ -1876,20 +1879,21 @@ namespace DOL.GS.ServerRules
             //You get 20% bonus if your guild owns the keep or a 10% bonus
             //if your realm owns the keep.
 
-            AbstractGameKeep keep = GameServer.KeepManager.GetKeepCloseToSpot(playerToAward.CurrentRegionID, playerToAward, 16000);
+            const double GUILD_OUTPOST_PERCENT_BONUS = 0.2;
+            const double REALM_OUTPOST_PERCENT_BONUS = 0.1;
+            const int OUTPOST_RADIUS = 16000;
 
-            if (keep != null)
-            {
-                byte bonus = 0;
+            double outpostPercentBonus = 0.0;
+            AbstractGameKeep keep = GameServer.KeepManager.GetClosestKeepToSpot(playerToAward.CurrentRegionID, playerToAward, OUTPOST_RADIUS);
 
-                if (keep.Guild != null && keep.Guild == playerToAward.Guild)
-                    bonus = 20;
-                else if (GameServer.Instance.Configuration.ServerType is EGameServerType.GST_Normal && keep.Realm == playerToAward.Realm)
-                    bonus = 10;
+            if (keep.Guild != null && keep.Guild == playerToAward.Guild)
+                outpostPercentBonus = GUILD_OUTPOST_PERCENT_BONUS;
+            else if (keep.Realm == playerToAward.Realm && GameServer.Instance.Configuration.ServerType is EGameServerType.GST_Normal)
+                outpostPercentBonus = REALM_OUTPOST_PERCENT_BONUS;
 
-                outpostBonus = (long) (baseXpReward / 100.0 * bonus);
-            }
+            long outpostBonus = (long) (baseXpReward * outpostPercentBonus);
 
+            // Merge global keep bonuses for simplicity's sake.
             if (KeepBonusMgr.RealmHasBonus(eKeepBonusType.Experience_5, playerToAward.Realm))
                 outpostBonus += (long) (baseXpReward / 100.0 * 5);
             else if (KeepBonusMgr.RealmHasBonus(eKeepBonusType.Experience_3, playerToAward.Realm))
