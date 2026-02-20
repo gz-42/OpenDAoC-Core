@@ -286,7 +286,7 @@ namespace DOL.GS
 
             if (Owner.CurrentZone.IsPathfindingEnabled)
             {
-                Vector3? target = PathfindingMgr.Instance.GetRandomPoint(Owner.CurrentZone, new(Owner.SpawnPoint.X, Owner.SpawnPoint.Y, Owner.SpawnPoint.Z), maxRoamingRadius);
+                Vector3? target = PathfindingProvider.Instance.GetRandomPoint(Owner.CurrentZone, new(Owner.SpawnPoint.X, Owner.SpawnPoint.Y, Owner.SpawnPoint.Z), maxRoamingRadius);
 
                 if (target.HasValue)
                     PathTo(target.Value, speed);
@@ -393,11 +393,8 @@ namespace DOL.GS
             if (_lastPositionUpdateTick == GameLoop.GameLoopTime)
                 return;
 
-            // We still update `_ownerPosition` if the NPC isn't moving in case it's not moving by itself (teleports, GM tool...)
-            // This ensures it always has a value.
             if (!IsMoving)
             {
-                _ownerPosition = new(Owner.RealX, Owner.RealY, Owner.RealZ);
                 _lastPositionUpdateTick = GameLoop.GameLoopTime;
                 return;
             }
@@ -528,7 +525,7 @@ namespace DOL.GS
                 {
                     // Finalize the path if we have direct LoS to the destination.
                     // This ensures that the NPC stays on the mesh, assuming it's on it to begin with.
-                    if (PathfindingMgr.Instance.HasLineOfSight(zone, _ownerPosition, destination))
+                    if (PathfindingProvider.Instance.HasLineOfSight(zone, _ownerPosition, destination))
                         FallbackToWalk(this, destination, speed);
                     else
                         PauseMovement(this, destination);
@@ -605,7 +602,7 @@ namespace DOL.GS
                     return;
 
                 Vector3 playerOwnerPos = new(playerOwner.X, playerOwner.Y, playerOwner.Z);
-                Vector3? floor = PathfindingMgr.Instance.GetFloorBeneath(playerOwner.CurrentZone, playerOwnerPos, MAX_FLOOR_SEARCH_DEPTH);
+                Vector3? floor = PathfindingProvider.Instance.GetFloorBeneath(playerOwner.CurrentZone, playerOwnerPos, MAX_FLOOR_SEARCH_DEPTH);
 
                 if (floor.HasValue && !component.Owner.IsWithinRadius(floor.Value, MIN_TELEPORT_DISTANCE))
                 {
@@ -688,7 +685,7 @@ namespace DOL.GS
             else
                 speed = (short) Math.Min(MaxSpeed, (distance - MinFollowDistance) * 2.5);
 
-            PathToInternal(destination, Math.Max((short) 10, speed));
+            PathToInternal(destination, Math.Max((short) 20, speed));
             return Properties.GAMENPC_FOLLOWCHECK_TIME;
         }
 
