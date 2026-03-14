@@ -1,7 +1,6 @@
 #Simple workflow to keep this fork up to date with the upstream repo
 permissions:
   contents: write
-  workflows: write
 
 name: 'Upstream Sync'
 
@@ -33,6 +32,7 @@ jobs:
         # optional: set the branch to checkout,
         # sync action checks out your 'target_sync_branch' anyway
         ref:  master
+        persist-credentials: false
 
     # REQUIRED step
     # Step 2: run the sync action
