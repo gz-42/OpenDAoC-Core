@@ -1,3 +1,7 @@
+permissions:
+  contents: write
+  packages: write
+
 name: 'Build and push Docker image, then create release'
 on:
   workflow_call:
@@ -72,7 +76,7 @@ jobs:
           docker tag "${{ github.actor }}/${{ steps.repo_name.outputs.lowercase }}:temp" "ghcr.io/${{ steps.repo_name.outputs.lowercase }}:latest"
 
       - name: 🔑 Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: '${{ github.actor }}'
