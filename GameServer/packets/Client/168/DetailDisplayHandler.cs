@@ -444,7 +444,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 						{
 							WriteUsableClasses(objectInfo, item, client);
 							WriteMagicalBonuses(objectInfo, item, client, false);
-							WriteClassicShieldInfos(objectInfo, item, client);
+							WriteClassicShieldInfos(objectInfo, GameInventoryItem.Create(item), client);
 						}
 
 						if ((item.Item_Type != (int)eInventorySlot.Horse && item.Object_Type == (int)eObjectType.Magical)
@@ -616,7 +616,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 						{
 							WriteUsableClasses(objectInfo, invItem, client);
 							WriteMagicalBonuses(objectInfo, invItem, client, false);
-                        WriteClassicWeaponInfos(objectInfo, invItem, client);
+                        WriteClassicWeaponInfos(objectInfo, GameInventoryItem.Create(invItem), client);
 						}
 
 						if (invItem.Object_Type >= (int)eObjectType.Cloth && invItem.Object_Type <= (int)eObjectType.Scale)
@@ -896,6 +896,32 @@ namespace DOL.GS.PacketHandler.Client.v168
 					if (client.CanSendTooltip(24, objectId))
 					{
 						var spell = SkillBase.GetSpellByTooltipID(objectId);
+
+						if (spell == null)
+						{
+							// Workaround for dynamically created spell that couldn't be retrieved from SkillBase.
+							// Either because AddScriptedSpell wasn't called, or the spell was missing values to be handled by it.
+							// This is the case for most (if not all) spells spawned by RAs.
+							// The only way to retrieve the spell is by iterating the player's effect list.
+
+							// To further complicate things, those spells don't define InternalID, but Icon.
+							// This means that we have to compare objectId against ECSGameSpellEffect.Icon first,
+							// but then reply to the client with the correct value and update Spell.InternalId
+
+							// Note: DbSpell.TooltipId becomes Spell.InternalId when created.
+
+							foreach (ECSGameSpellEffect spellEffect in client.Player.effectListComponent.GetSpellEffects())
+							{
+								if (spellEffect.Icon == objectId)
+								{
+									spell = spellEffect.SpellHandler.Spell;
+									spell.InternalID = objectId;
+									client.Out.SendDelveInfo(DelveSpell(client, spell));
+									break;
+								}
+							}
+						}
+
 						client.Out.SendDelveInfo(DelveSpell(client, spell));
 					}
 					break;
@@ -1228,7 +1254,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 			output.Add(" ");
 			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicWeaponInfos.EffDamage"));
 
-			if (itemDps != 0)
+			if (effectiveDps != 0)
 				output.Add($"- {effectiveDps:0.0} DPS");
 		}
 
@@ -1236,6 +1262,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 		{
 			WriteUsableClasses(output, item.Template, client);
 		}
+
 		public void WriteUsableClasses(IList<string> output, DbItemTemplate item, GameClient client)
 		{
 			if (string.IsNullOrEmpty(item.AllowedClasses))
@@ -1260,35 +1287,37 @@ namespace DOL.GS.PacketHandler.Client.v168
 		/// </summary>
 		public void WriteClassicShieldInfos(IList<string> output, DbInventoryItem item, GameClient client)
 		{
-			WriteClassicShieldInfos(output, item.Template, client);
-		}
-		public void WriteClassicShieldInfos(IList<string> output, DbItemTemplate item, GameClient client)
-		{
-			double itemDPS = item.DPS_AF / 10.0;
-			double clampedDPS = Math.Min(itemDPS, 1.2 + 0.3 * client.Player.Level);
-			double itemSPD = item.SPD_ABS / 10.0;
+			double itemDps = item.DPS_AF * 0.1;
+			double clampedDps = Math.Min(itemDps, client.Player.GetWeaponDpsCap());
+			double itemSpd = item.SPD_ABS * 0.1;
+			double effectiveDps = clampedDps * item.Quality * 0.01 * item.ConditionPercent * 0.01;
 
 			output.Add(" ");
 			output.Add(" ");
 			output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.DamageMod"));
-			if (itemDPS != 0)
+
+			if (itemDps != 0)
 			{
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.BaseDPS", itemDPS.ToString("0.0")));
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.ClampDPS", clampedDPS.ToString("0.0")));
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.BaseDPS", itemDps.ToString("0.0")));
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.ClampDPS", clampedDps.ToString("0.0")));
 			}
+
 			if (item.SPD_ABS >= 0)
 			{
-				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.SPD", itemSPD.ToString("0.0")));
+				output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.SPD", itemSpd.ToString("0.0")));
 			}
 
 			output.Add(" ");
 
 			switch (item.Type_Damage)
 			{
-					case 1: output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.Small")); break;
-					case 2: output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.Medium")); break;
-					case 3: output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.Large")); break;
+				case 1: output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.Small")); break;
+				case 2: output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.Medium")); break;
+				case 3: output.Add(LanguageMgr.GetTranslation(client.Account.Language, "DetailDisplayHandler.WriteClassicShieldInfos.Large")); break;
 			}
+
+			if (effectiveDps != 0)
+				output.Add($"- {effectiveDps:0.0} DPS");
 		}
 
 		/// <summary>
@@ -2022,6 +2051,7 @@ namespace DOL.GS.PacketHandler.Client.v168
 		/// <returns></returns>
         public static string DelveRealmAbility(GameClient client, int id)
         {
+			
 			Skill ra = client.Player.GetAllUsableSkills().Where(e => e.Item1.InternalID == id && e.Item1 is Ability).Select(e => e.Item1).FirstOrDefault();
 			
 			if (ra == null)

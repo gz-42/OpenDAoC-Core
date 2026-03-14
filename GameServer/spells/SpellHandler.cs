@@ -621,6 +621,15 @@ namespace DOL.GS.Spells
 						return false;
 					}
 
+					if (!m_caster.IsWithinRadius(Target, Spell.CalculateEffectiveRange(m_caster)))
+					{
+						if (Caster is GamePlayer && !quiet)
+							MessageToCaster("That target is too far away!", eChatType.CT_SpellResisted);
+
+						Caster.Notify(GameLivingEvent.CastFailed, new CastFailedEventArgs(this, CastFailedEventArgs.Reasons.TargetTooFarAway));
+						return false;
+					}
+
 					break;
 				}
 				case eSpellTarget.AREA:
@@ -1534,7 +1543,7 @@ namespace DOL.GS.Spells
 					if (Spell.Radius == 0)
 						return list;
 
-					// Buffs affect every pet around the targetted pet (same owner).
+					// Buffs affect every pet around the targeted pet (same owner).
 					if (pet != null)
 					{
 						foreach (GameNPC npcInRadius in pet.GetNPCsInRadius(modifiedRadius))
@@ -1842,7 +1851,7 @@ namespace DOL.GS.Spells
 
 		private bool IsTargetAffectedBySpellType(GameLiving target)
 		{
-			if (target is GameKeepDoor or GameKeepComponent && Spell.SpellType is not eSpellType.SiegeDirectDamage or eSpellType.SiegeArrow && !IsSummoningSpell)
+			if (target is GameKeepDoor or GameKeepComponent && Spell.SpellType is not eSpellType.SiegeDirectDamage and not eSpellType.SiegeArrow && !IsSummoningSpell)
 			{
 				MessageToCaster($"Your spell has no effect on the {target.Name}.", eChatType.CT_SpellResisted);
 				return false;
@@ -1876,41 +1885,6 @@ namespace DOL.GS.Spells
 			spellHandler.StartSpell(target);
 		}
 
-		public virtual List<GameLiving> GetGroupAndPets(Spell spell)
-		{
-			List<GameLiving> livingsInRange = GameLoop.GetListForTick<GameLiving>();
-			List<GameLiving> groupMembers = Caster.Group?.GetMembersInTheGroup() ?? (Caster as NecromancerPet)?.Owner.Group?.GetMembersInTheGroup();
-
-			if (groupMembers == null)
-			{
-				groupMembers = GameLoop.GetListForTick<GameLiving>();
-				groupMembers.Add(Caster);
-			}
-
-			foreach (GameLiving living in groupMembers)
-			{
-				IControlledBrain controlledBrain = living.ControlledBrain;
-				IControlledBrain[] subControlledBrains = controlledBrain?.Body.ControlledNpcList;
-
-				if (subControlledBrains != null)
-				{
-					foreach (IControlledBrain subControlledBrain in subControlledBrains.Where(x => x != null && Caster.IsWithinRadius(x.Body, Spell.CalculateEffectiveRange(Caster))))
-						livingsInRange.Add(subControlledBrain.Body);
-				}
-
-				if (controlledBrain != null)
-				{
-					if (Caster.IsWithinRadius(controlledBrain.Body, Spell.CalculateEffectiveRange(Caster)))
-						livingsInRange.Add(controlledBrain.Body);
-				}
-
-				if (Caster == living || Caster.IsWithinRadius(living, Spell.CalculateEffectiveRange(Caster)))
-					livingsInRange.Add(living);
-			}
-
-			return livingsInRange;
-		}
-
 		/// <summary>
 		/// Tries to start a spell attached to an item (/use with at least 1 charge)
 		/// Override this to do a CheckBeginCast if needed, otherwise spell will always cast and item will be used.
@@ -1942,18 +1916,7 @@ namespace DOL.GS.Spells
 				}
 			}
 
-			List<GameLiving> targets;
-			if (Spell.Target is eSpellTarget.REALM
-				&& (Target == Caster || (Caster is NecromancerPet nPet && Target == nPet.Owner))
-				&& !Spell.IsConcentration
-				&& !Spell.IsHealing
-				&& Spell.IsBuff
-				&& Spell.SpellType is not eSpellType.Bladeturn
-				&& Spell.SpellType is not eSpellType.Bomber)
-				targets = GetGroupAndPets(Spell);
-			else
-				targets = SelectTargets(Target);
-
+			List<GameLiving> targets = SelectTargets(Target);
 			CasterEffectiveness = Caster.Effectiveness;
 
 			/// [Atlas - Takii] No effectiveness drop in OF MOC.

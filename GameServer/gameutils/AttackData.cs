@@ -35,6 +35,7 @@ namespace DOL.GS
         public bool IsSpellResisted { get; set; }
         public int Modifier { get; set; } // Resisted damage.
         public int AnimationId { get; set; }
+
         // Temporary property set by `AttackComponent.BroadcastAttackMessageToOtherPlayers`.
         // Used by pets in `GameNPC.OnAttackedByEnemy` for convenience.
         public string BroadcastMessage { get; set; }
