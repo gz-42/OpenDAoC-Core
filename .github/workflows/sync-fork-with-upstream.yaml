@@ -43,7 +43,7 @@ jobs:
         target_sync_branch: master
         upstream_sync_branch: master
         upstream_sync_repo: OpenDAoC/OpenDAoC-Core
-        target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+        target_repo_token: ${{ secrets.PAT_TOKEN }}
         # Set test_mode true during manual dispatch to run tests instead of the true action!!
         test_mode: ${{ inputs.sync_test_mode }}
       
