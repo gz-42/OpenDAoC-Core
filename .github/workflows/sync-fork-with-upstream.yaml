@@ -1,6 +1,7 @@
 #Simple workflow to keep this fork up to date with the upstream repo
 permissions:
   contents: write
+  workflows: write
 
 name: 'Upstream Sync'
 
